@@ -2,14 +2,13 @@ import logging
 import os
 import sys
 from datetime import datetime
-from ados.config import ADOSConfig
 
-from ados.config import LoggingBehavior
+from ados.config import ADOSConfig, LoggingBehavior
 
 
 # Formatter for writing to log files and non-colored console output
 class _BasicFormatter(logging.Formatter):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("%(asctime)s %(levelname)-8s %(name)s %(message)s")
 
 

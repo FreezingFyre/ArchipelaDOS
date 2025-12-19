@@ -1,16 +1,17 @@
 import os
-import yaml
 from enum import Enum
 from logging import getLevelNamesMapping
-from pydantic import BaseModel, BeforeValidator, model_validator
 from typing import Annotated, Any, Optional, Self
+
+import yaml
+from pydantic import BaseModel, BeforeValidator, model_validator
 
 
 def _transform_logging_level(value: Any) -> int:
     try:
         return getLevelNamesMapping()[str(value).upper()]
-    except KeyError:
-        raise ValueError(f"invalid logging level '{value}'")
+    except KeyError as ex:
+        raise ValueError(f"invalid logging level '{value}'") from ex
 
 
 class LoggingBehavior(str, Enum):
