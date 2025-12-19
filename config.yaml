@@ -1,0 +1,28 @@
+###################
+# DISCORD OPTIONS #
+###################
+
+# The Discord bot token used to authenticate with the Discord API.
+discord_token: null
+
+
+###################
+# RUNNING OPTIONS #
+###################
+
+# How the bot handles logging. Logs will always be printed to the console unless disabled.
+#   - "none": Disables logging entirely.
+#   - "console_only": Logs will only be printed to the console.
+#   - "file_overwrite": Logs will be written to a file, overwriting it on each run.
+#   - "file_append": Logs will be written to a file, appending to it on each run.
+#   - "file_directory": Logs will be written to a new file in a directory, with a timestamped filename.
+logging_behavior: file_directory
+
+# The path to the log file or directory, depending on the logging behavior.
+logging_path: logs
+
+# The minimum logging level to record. Must be one of: "debug", "info", "warning", "error", "critical".
+logging_level: info
+
+# Whether to log to the console in brilliant colors.
+logging_color: true

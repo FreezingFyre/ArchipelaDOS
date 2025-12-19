@@ -1,0 +1,14 @@
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+
+
+[tool.isort]
+case_sensitive = true
+profile = "black"
+
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]

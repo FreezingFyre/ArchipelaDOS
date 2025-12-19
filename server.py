@@ -2,11 +2,12 @@ import sys
 
 from ados.bot import ADOSBot
 from ados.config import load_config
-from ados.logging import initialize_logging
+from ados.logger import initialize_logging
 
 DEFAULT_CONFIG_PATH = "config.yaml"
 
-def main():
+
+def main() -> None:
 
     if len(sys.argv) > 2:
         print("Usage: python server.py [config_path]")
@@ -22,6 +23,7 @@ def main():
 
     bot = ADOSBot(config)
     bot.run(config.discord_token)
+
 
 if __name__ == "__main__":
     main()
