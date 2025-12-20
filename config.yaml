@@ -5,10 +5,16 @@
 # The Discord bot token used to authenticate with the Discord API.
 discord_token: null
 
+# The Discord server in which to operate. Currently, the bot can only operate in one server.
+discord_server: null
 
-###################
-# LOGGING OPTIONS #
-###################
+# The Discord channel(s) in which to operate. If empty, the bot will operate in all channels.
+discord_channels: []
+
+
+#########################
+# LOCAL LOGGING OPTIONS #
+#########################
 
 # How the bot handles logging. Logs will always be printed to the console unless disabled.
 #   - "none": Disables logging entirely.

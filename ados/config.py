@@ -34,6 +34,8 @@ class ADOSConfig(BaseModel):
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
     discord_token: str = Field(..., exclude=True, repr=False)
+    discord_server: str
+    discord_channels: list[str]
 
     logging_behavior: LoggingBehavior
     logging_path: Optional[str]
@@ -45,14 +47,17 @@ class ADOSConfig(BaseModel):
     def _serialize_logging_level(self, level: int) -> str:
         return getLevelName(level)
 
-    # Validate the logging path is set when needed, and massage the path to be absolute
+    # Expand the logging path to be absolute
+    @field_serializer("logging_path")
+    def _expand_logging_path(self, path: Optional[str]) -> Optional[str]:
+        return os.path.abspath(path) if path is not None else None
+
+    # Validate the logging path is set when needed
     @model_validator(mode="after")
     def _validate_logging(self) -> Self:
         if self.logging_behavior not in (LoggingBehavior.NONE, LoggingBehavior.CONSOLE_ONLY):
             if not self.logging_path:
                 raise ValueError("logging_path must be set for the selected logging_behavior")
-        if self.logging_path is not None:
-            self.logging_path = os.path.abspath(self.logging_path)
         return self
 
 

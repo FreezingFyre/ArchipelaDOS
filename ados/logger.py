@@ -35,17 +35,7 @@ class _ColorFormatter(logging.Formatter):
         formatter = self.FORMATS.get(record.levelno)
         if formatter is None:
             formatter = self.FORMATS[logging.DEBUG]
-
-        # Override the traceback to always print in red
-        if record.exc_info:
-            text = formatter.formatException(record.exc_info)
-            record.exc_text = f"\x1b[31m{text}\x1b[0m"
-
-        output = formatter.format(record)
-
-        # Remove the cache layer
-        record.exc_text = None
-        return output
+        return formatter.format(record)
 
 
 def initialize_logging(config: ADOSConfig) -> None:
