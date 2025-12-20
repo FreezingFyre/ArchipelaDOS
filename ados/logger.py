@@ -12,7 +12,8 @@ class _BasicFormatter(logging.Formatter):
         super().__init__("%(asctime)s %(levelname)-8s %(name)s %(message)s")
 
 
-# Formatter for colored console output
+# Formatter for colored console output, shamelessly stolen and adapted from the discord.py project:
+# https://github.com/Rapptz/discord.py/blob/9be91cb093402f54a44726c7dc4c04ff3b2c5a63/discord/utils.py#L1303
 class _ColorFormatter(logging.Formatter):
 
     LEVEL_COLORS = [
@@ -64,6 +65,7 @@ def initialize_logging(config: ADOSConfig) -> None:
     if config.logging_behavior == LoggingBehavior.CONSOLE_ONLY:
         return
 
+    # Path must be set when logging to a file; this is enforced for the config by pydantic
     assert config.logging_path is not None
 
     if config.logging_behavior == LoggingBehavior.FILE_DIRECTORY:

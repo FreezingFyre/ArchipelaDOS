@@ -22,7 +22,7 @@ def main() -> None:
         sys.exit(1)
 
     bot = ADOSBot(config)
-    bot.run(config.discord_token)
+    bot.run()
 
 
 if __name__ == "__main__":
