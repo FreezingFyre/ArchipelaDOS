@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from discord.ext import commands
 from discord.ext.commands.errors import UserInputError
 
-from ados.discord.utils import send_message
+from ados.discord.utils import send_info
 
 type BotContext = commands.context.Context[commands.Bot]
 
@@ -40,7 +40,7 @@ class Commands(commands.Cog, name="ArchipelaDOS"):  # pyright: ignore - pylance 
 
     @commands.command(name="hello", help="Greet the bot (and it might greet you back)")
     async def hello(self, ctx: BotContext) -> None:
-        await send_message(ctx, random.choice(Commands.HELLO_RESPONSES))
+        await send_info(ctx, random.choice(Commands.HELLO_RESPONSES))
 
     ################################################
     ########### SLOT MANAGEMENT COMMANDS ###########
