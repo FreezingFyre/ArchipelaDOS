@@ -1,6 +1,7 @@
 import logging
 
-import discord
+from discord import Intents
+from discord.commands.context import ApplicationContext
 from discord.ext import commands
 
 from ados.config import ADOSConfig
@@ -8,30 +9,32 @@ from ados.config import ADOSConfig
 _log = logging.getLogger(__name__)
 
 
-class _CustomHelp(commands.MinimalHelpCommand):
+class HelpCommand(commands.DefaultHelpCommand):
+    pass
 
-    def __init__(self) -> None:
-        super().__init__(no_category="Commands")  # type: ignore
 
-    async def send_pages(self) -> None:
+class ADOSCommands(commands.Cog, name="ArchipelaDOS"):  # pyright: ignore - pylance hates this pattern
 
-        dest = self.get_destination()  # type: ignore
-        if dest is self.context.channel and not isinstance(self.context.channel, discord.Thread):
-            print(repr(self.context.message))
-            dest = await self.context.message.create_thread(name="ArchipelaDOS")
-
-        for page in self.paginator.pages:
-            await dest.send(embed=discord.Embed(description=page))
-
-        if isinstance(dest, discord.Thread):
-            await dest.archive()
+    @commands.command(name="ping")
+    async def ping(self, ctx: ApplicationContext) -> None:
+        await ctx.send("Pong!")
 
 
 class ADOSBot(commands.Bot):
 
     def __init__(self, config: ADOSConfig):
-        self._config = config
-        intents = discord.Intents.default()
+        intents = Intents.default()
         intents.message_content = True
-        _log.info("Initializing ADOSBot with provided configuration.")
-        super().__init__(command_prefix="!", intents=intents, help_command=_CustomHelp())
+        help_command = HelpCommand()  # type: ignore[no-untyped-call]
+        super().__init__(command_prefix="!", intents=intents, help_command=help_command)
+
+        bot_commands = ADOSCommands()
+        help_command.cog = bot_commands  # Need to set the cog so 'help' is grouped with other commands
+        self.add_cog(bot_commands)
+
+        self._config = config
+
+    def run(self) -> None:
+        _log.info("Starting ArchipelaDOS bot with configuration: %s", self._config.model_dump_json())
+        super().run(self._config.discord_token)
+        _log.info("Stopping ArchipelaDOS bot")

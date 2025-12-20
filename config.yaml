@@ -7,7 +7,7 @@ discord_token: null
 
 
 ###################
-# RUNNING OPTIONS #
+# LOGGING OPTIONS #
 ###################
 
 # How the bot handles logging. Logs will always be printed to the console unless disabled.
