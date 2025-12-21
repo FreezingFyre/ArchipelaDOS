@@ -92,7 +92,7 @@ class ADOSBot(commands.Bot):
     async def on_command_error(self, context: BotContext, exception: CommandError) -> None:
         if isinstance(exception, (CommandNotFound, ConversionError, UserInputError)):
             _log.info("Invalid user command '%s': %s", context.message.content, exception)
-            await send_failure(context, f"Invalid command: {exception}\nUse `!help` to see what's available.")
+            await send_failure(context, f"Invalid command: {exception} - Use `!help` to see what's available.")
         elif isinstance(exception, CommandInvokeError) and isinstance(exception.original, ADOSError):
             _log.info("Could not process user command '%s': %s", context.message.content, exception.original)
             await send_failure(context, f"Could not process command: {exception.original}")
