@@ -1,25 +1,17 @@
-from enum import Enum
-
-import discord
 from discord.ext import commands
+
+from ados.common import Color
 
 type BotContext = commands.context.Context[commands.Bot]
 
 
-# Messages from the bot will always be embedded with a different color based on type.
-# Below are helper functions to send these messages.
-async def _send_message(ctx: BotContext, message: str, color: discord.Color) -> None:
-    embed = discord.Embed(description=f"*{message}*", color=color)
-    await ctx.send(embed=embed)
-
-
 async def send_info(ctx: BotContext, message: str) -> None:
-    await _send_message(ctx, message, discord.Color.light_grey())
+    await ctx.send(f"```ansi\n{message}```")
 
 
 async def send_success(ctx: BotContext, message: str) -> None:
-    await _send_message(ctx, message, discord.Color.dark_green())
+    await ctx.send(f"```ansi\n{Color.CYAN}{message}```")
 
 
 async def send_failure(ctx: BotContext, message: str) -> None:
-    await _send_message(ctx, message, discord.Color.dark_red())
+    await ctx.send(f"```ansi\n{Color.RED}{message}```")
