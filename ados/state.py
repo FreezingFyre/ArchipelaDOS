@@ -4,7 +4,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
-from typing import DefaultDict
+from typing import Any, Callable, Coroutine, DefaultDict, Self
 
 from pydantic import BaseModel
 
@@ -25,19 +25,19 @@ class StateData(BaseModel):
 class ADOSState:
 
     @staticmethod
-    def protect(func):
-        async def _wrapper(self, *args, **kwargs):
-            async with self._lock:
+    def protect[T](func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
+        async def _wrapper(self: Self, *args: Any, **kwargs: Any) -> T:
+            async with self._lock:  # pylint: disable = protected-access
                 return func(self, *args, **kwargs)
 
         return _wrapper
 
     @staticmethod
-    def protect_persist(func):
-        async def _wrapper(self, *args, **kwargs):
-            async with self._lock:
+    def protect_persist[T](func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
+        async def _wrapper(self: Self, *args: Any, **kwargs: Any) -> T:
+            async with self._lock:  # pylint: disable = protected-access
                 result = func(self, *args, **kwargs)
-                self._save_state()
+                self._save_state()  # pylint: disable = protected-access
                 return result
 
         return _wrapper
@@ -61,13 +61,12 @@ class ADOSState:
         self._data.user_slots[user_id].add(slot)
 
     @protect_persist
-    async def remove_user_slot(self, user_id: int, slot: str) -> None:
+    def remove_user_slot(self, user_id: int, slot: str) -> None:
         if slot not in self._data.user_slots.get(user_id, set()):
             raise ADOSError(f"User is not registered for slot `{slot}`")
         self._data.user_slots[user_id].remove(slot)
         if not self._data.user_slots[user_id]:
             self._data.user_slots.pop(user_id)
-        self._save_state()
 
     @protect_persist
     def clear_user_slots(self, user_id: int) -> None:

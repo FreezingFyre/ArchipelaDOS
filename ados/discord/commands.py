@@ -64,20 +64,20 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         "Zdravstvuyte",
     ]
 
-    @commands.command(name="hello", help="Greet the bot (it might greet you back)")
+    @commands.command(name="hello", help="Greet the bot (it might greet you back)", ignore_extra=False)
     async def hello(self, ctx: BotContext) -> None:
         await send_message(ctx, random.choice(Commands.GREETINGS))
 
-    @commands.command(name="dmme", help="Trigger the bot to send you a direct message")
+    @commands.command(name="dmme", help="Trigger the bot to send you a direct message", ignore_extra=False)
     async def dmme(self, ctx: BotContext) -> None:
         await ctx.message.author.send(random.choice(Commands.GREETINGS))
         await send_success(ctx, "Direct message sent")
 
-    @commands.command(name="threadme", help="Trigger the bot to send you a message in a new thread")
+    @commands.command(name="threadme", help="Trigger the bot to send you a message in a new thread", ignore_extra=False)
     async def threadme(self, ctx: BotContext) -> None:
         await send_message(ctx, random.choice(Commands.GREETINGS), reply=True)
 
-    @commands.command(name="refresh", help="Refresh the room on archipelago.gg")
+    @commands.command(name="refresh", help="Refresh the room on archipelago.gg", ignore_extra=False)
     async def refresh(self, ctx: BotContext) -> None:
         pass  # TODO: Implement
 
@@ -89,17 +89,17 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def slot(self, ctx: BotContext) -> None:
         raise UserInputError("Must specify a sub-command for `!slot`")
 
-    @slot.command(name="add", help="Registers you for the given slot")  # type: ignore[arg-type]
+    @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, slot: str) -> None:
         await self._state.add_user_slot(ctx.author.id, slot)
         await send_success(ctx, f"You have been registered for slot `{slot}`")
 
-    @slot.command(name="remove", help="Unregisters you from the given slot")  # type: ignore[arg-type]
+    @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_remove(self, ctx: BotContext, slot: str) -> None:
         await self._state.remove_user_slot(ctx.author.id, slot)
         await send_success(ctx, f"You have been unregistered from slot `{slot}`")
 
-    @slot.command(name="list", help="Lists all slots for which you are registered")  # type: ignore[arg-type]
+    @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_list(self, ctx: BotContext) -> None:
         user_slots = await self._state.user_slots(ctx.author.id)
         if not user_slots:
@@ -108,7 +108,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_list = ", ".join(f"`{slot}`" for slot in sorted(user_slots))
             await send_message(ctx, f"You are registered for the following slots: {slot_list}")
 
-    @slot.command(name="clear", help="Unregisters you from all slots")  # type: ignore[arg-type]
+    @slot.command(name="clear", help="Unregisters you from all slots", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_clear(self, ctx: BotContext) -> None:
         await self._state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
@@ -121,15 +121,15 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def replay(self, ctx: BotContext) -> None:
         raise UserInputError("Must specify a sub-command for `!replay`")
 
-    @replay.command(name="recent", help="Replay items received since last call (can filter by slot/item level)")  # type: ignore[arg-type]
+    @replay.command(name="recent", help="Replay items received since last call (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
     async def replay_recent(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
         pass  # TODO: Implement
 
-    @replay.command(name="all", help="Replay all items recieved since game start (can filter by slot/item level)")  # type: ignore[arg-type]
+    @replay.command(name="all", help="Replay all items recieved since game start (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
     async def replay_all(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
         pass  # TODO: Implement
 
-    @commands.command(name="ketchmeup", help="Alias of '!replay recent'")
+    @commands.command(name="ketchmeup", help="Alias of '!replay recent'", ignore_extra=False)
     async def ketchmeup(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
         await self.replay_recent(ctx, flags=flags)  # type: ignore[arg-type]
 
@@ -141,19 +141,19 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def hint(self, ctx: BotContext) -> None:
         raise UserInputError("Must specify a sub-command for `!hint`")
 
-    @hint.command(name="points", help="Show hint points (can filter by slot)")  # type: ignore[arg-type]
+    @hint.command(name="points", help="Show hint points (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_points(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
-    @hint.command(name="use", help="Use a hint for the given item (can filter by slot, and must if multi-registered)")  # type: ignore[arg-type]
+    @hint.command(name="use", help="Use a hint for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_use(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
-    @hint.command(name="list", help="List unfound hints (can filter by slot)")  # type: ignore[arg-type]
+    @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_list(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
-    @hint.command(name="listall", help="List all hints (can filter by slot)")  # type: ignore[arg-type]
+    @hint.command(name="listall", help="List all hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_listall(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
@@ -165,19 +165,19 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def subscribe(self, ctx: BotContext) -> None:
         raise UserInputError("Must specify a sub-command for `!subscribe`")
 
-    @subscribe.command(name="add", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)")  # type: ignore[arg-type]
+    @subscribe.command(name="add", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_add(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
-    @subscribe.command(name="remove", help="Unsubscribes you from the given item (can filter by slot)")  # type: ignore[arg-type]
+    @subscribe.command(name="remove", help="Unsubscribes you from the given item (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
-    @subscribe.command(name="list", help="Lists your active item subscriptions (can filter by slot)")  # type: ignore[arg-type]
+    @subscribe.command(name="list", help="Lists your active item subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_list(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
-    @subscribe.command(name="clear", help="Unsubscribes you from all items (can filter by slot)")  # type: ignore[arg-type]
+    @subscribe.command(name="clear", help="Unsubscribes you from all items (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         pass  # TODO: Implement
 
@@ -185,10 +185,10 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     ################ STATS COMMANDS ################
     ################################################
 
-    @commands.command(name="checks", help="Outputs data on completed/total checks per slot")
+    @commands.command(name="checks", help="Outputs data on completed/total checks per slot", ignore_extra=False)
     async def checks(self, ctx: BotContext, mode: Literal["list", "graph"]) -> None:
         pass  # TODO: Implement
 
-    @commands.command(name="deaths", help="Outputs data on death links triggered per slot")
+    @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
     async def deaths(self, ctx: BotContext, mode: Literal["list", "graph"]) -> None:
         pass  # TODO: Implement
