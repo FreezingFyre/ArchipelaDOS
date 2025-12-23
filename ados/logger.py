@@ -1,20 +1,19 @@
 import logging
 import os
 import sys
-from datetime import datetime
 
 from ados.config import ADOSConfig, LoggingBehavior
 
 
 # Formatter for writing to log files and non-colored console output
-class _BasicFormatter(logging.Formatter):
+class BasicFormatter(logging.Formatter):
     def __init__(self) -> None:
         super().__init__("%(asctime)s %(levelname)-8s %(name)s %(message)s")
 
 
 # Formatter for colored console output, shamelessly stolen and adapted from the discord.py project:
 # https://github.com/Rapptz/discord.py/blob/9be91cb093402f54a44726c7dc4c04ff3b2c5a63/discord/utils.py#L1303
-class _ColorFormatter(logging.Formatter):
+class ColorFormatter(logging.Formatter):
 
     LEVEL_COLORS = [
         (logging.DEBUG, "\x1b[40;1m"),
@@ -48,7 +47,7 @@ def initialize_logging(config: ADOSConfig) -> None:
 
     # Always output to the console when logging is enabled
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(_ColorFormatter() if config.logging_color else _BasicFormatter())
+    console_handler.setFormatter(ColorFormatter() if config.logging_color else BasicFormatter())
     log.addHandler(console_handler)
     log.setLevel(config.logging_level)
 
@@ -60,13 +59,12 @@ def initialize_logging(config: ADOSConfig) -> None:
 
     if config.logging_behavior == LoggingBehavior.FILE_DIRECTORY:
         os.makedirs(config.logging_path, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = os.path.join(config.logging_path, f"ados_{timestamp}.log")
+        file_path = os.path.join(config.logging_path, f"ados_{config.archipelago_room}.log")
     else:
         os.makedirs(os.path.dirname(config.logging_path), exist_ok=True)
         file_path = config.logging_path
     mode = "a" if config.logging_behavior == LoggingBehavior.FILE_APPEND else "w"
 
     file_handler = logging.FileHandler(file_path, mode=mode)
-    file_handler.setFormatter(_BasicFormatter())
+    file_handler.setFormatter(BasicFormatter())
     log.addHandler(file_handler)

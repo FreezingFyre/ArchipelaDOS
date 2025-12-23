@@ -1,6 +1,11 @@
-###################
-# DISCORD OPTIONS #
-###################
+################
+# CORE OPTIONS #
+################
+
+# The Archipelago room to connect to. This is the identifier found after room/ in the URL
+# of the room. For example, in https://archipelago.gg/room/93eBTEhDS_uu9-JsAl5YbQ, the room
+# ID is "93eBTEhDS_uu9-JsAl5YbQ".
+archipelago_room: null
 
 # The Discord bot token used to authenticate with the Discord API.
 discord_token: null
@@ -10,6 +15,10 @@ discord_server: null
 
 # The Discord channel(s) in which to operate. If empty, the bot will operate in all channels.
 discord_channels: []
+
+# The directory in which to store persistent bot data, so the bot can be restarted. Files in
+# this directory will be created per-room, so different rooms will not interfere with each other.
+data_path: data
 
 
 #########################
@@ -21,7 +30,7 @@ discord_channels: []
 #   - "console_only": Logs will only be printed to the console.
 #   - "file_overwrite": Logs will be written to a file, overwriting it on each run.
 #   - "file_append": Logs will be written to a file, appending to it on each run.
-#   - "file_directory": Logs will be written to a new file in a directory, with a timestamped filename.
+#   - "file_directory": Logs will be appended to a room-specific file in a directory.
 logging_behavior: file_directory
 
 # The path to the log file or directory, depending on the logging behavior.

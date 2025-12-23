@@ -32,10 +32,14 @@ class LoggingBehavior(str, Enum):
 # validation enforced by pydantic
 class ADOSConfig(BaseModel):
 
+    archipelago_room: str
+
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
     discord_token: str = Field(..., exclude=True, repr=False)
     discord_server: str
     discord_channels: list[str]
+
+    data_path: str
 
     logging_behavior: LoggingBehavior
     logging_path: Optional[str]
@@ -47,9 +51,9 @@ class ADOSConfig(BaseModel):
     def _serialize_logging_level(self, level: int) -> str:
         return getLevelName(level)
 
-    # Expand the logging path to be absolute
-    @field_serializer("logging_path")
-    def _expand_logging_path(self, path: Optional[str]) -> Optional[str]:
+    # Expand paths to be absolute
+    @field_serializer("data_path", "logging_path")
+    def _expand_path(self, path: Optional[str]) -> Optional[str]:
         return os.path.abspath(path) if path is not None else None
 
     # Validate the logging path is set when needed
