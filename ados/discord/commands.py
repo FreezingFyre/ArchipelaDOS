@@ -20,11 +20,11 @@ def _strip_quotes(value: Optional[str]) -> Optional[str]:
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, state: ADOSState, web_client: WebClient, world_client: WorldSocketClient):
+    def __init__(self, state: ADOSState, web: WebClient, world: WorldSocketClient):
         super().__init__()
         self._state = state
-        self._web_client = web_client
-        self._world_client = world_client
+        self._web = web
+        self._world = world
 
     class SlotFlags(commands.FlagConverter):
         slot: Optional[str] = None
@@ -84,19 +84,20 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="refresh", help="Refresh the room on archipelago.gg", ignore_extra=False)
     async def refresh(self, ctx: BotContext) -> None:
-        await self._web_client.refresh()
-        await self._world_client.connect(self._web_client.server_url)
-        await send_success(ctx, f"Refreshed room data from <{self._web_client.room_url}>")
+        await self._web.refresh()
+        await self._world.connect(self._web.server_url)
+        await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
 
     @commands.command(name="info", help="Get information about the Archipelago room", ignore_extra=False)
     async def info(self, ctx: BotContext) -> None:
-        port = self._web_client.server_url.split(":")[-1]
+        port = self._web.server_url.split(":")[-1]
+        slots_list = ", ".join(f"`{slot.alias}`" for slot in self._world.slots)
         message = (
             f"Room Information:\n"
             f"- Port: {port}\n"
-            f"- Room URL: <{self._web_client.room_url}>\n"
-            f"- Tracker URL: <{self._web_client.tracker_url}>\n"
-            f"- Available Slots: SLOTS"
+            f"- Room URL: <{self._web.room_url}>\n"
+            f"- Tracker URL: <{self._web.tracker_url}>\n"
+            f"- Available Slots: {slots_list}"
         )
         await send_message(ctx, message)
 
@@ -110,21 +111,24 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, slot: str) -> None:
-        self._state.add_user_slot(ctx.author.id, slot)
-        await send_success(ctx, f"You have been registered for slot `{slot}`")
+        info = self._world.resolve_slot(slot)
+        self._state.add_user_slot(ctx.author.id, info)
+        await send_success(ctx, f"You have been registered for slot `{info.alias}`")
 
     @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_remove(self, ctx: BotContext, slot: str) -> None:
-        self._state.remove_user_slot(ctx.author.id, slot)
-        await send_success(ctx, f"You have been unregistered from slot `{slot}`")
+        info = self._world.resolve_slot(slot)
+        self._state.remove_user_slot(ctx.author.id, info)
+        await send_success(ctx, f"You have been unregistered from slot `{info.alias}`")
 
     @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_list(self, ctx: BotContext) -> None:
-        user_slots = self._state.user_slots(ctx.author.id)
-        if not user_slots:
+        slot_ids = self._state.user_slots(ctx.author.id)
+        if not slot_ids:
             await send_message(ctx, "You are not registered for any slots")
         else:
-            slot_list = ", ".join(f"`{slot}`" for slot in sorted(user_slots))
+            slot_aliases = [self._world.resolve_slot(slot_id).alias for slot_id in slot_ids]
+            slot_list = ", ".join(f"`{slot}`" for slot in sorted(slot_aliases))
             await send_message(ctx, f"You are registered for the following slots: {slot_list}")
 
     @slot.command(name="clear", help="Unregisters you from all slots", ignore_extra=False)  # type: ignore[arg-type]

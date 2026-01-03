@@ -7,7 +7,7 @@ from typing import Any, Callable, DefaultDict, Self
 
 from pydantic import BaseModel
 
-from ados.common import ADOSError
+from ados.common import ADOSError, SlotInfo
 from ados.config import ADOSConfig
 
 _log = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ _log = logging.getLogger(__name__)
 
 # The actual data stored in the state file
 class StateData(BaseModel):
-    user_slots: DefaultDict[int, set[str]] = defaultdict(set)
+    user_slots: DefaultDict[int, set[int]] = defaultdict(set)  # Maps Discord user IDs to slot IDs
 
 
 # The main ArchipelaDOS state management class. Handles information related to user state,
@@ -40,20 +40,20 @@ class ADOSState:
         self._data = self._load_state()
         self._save_state()
 
-    def user_slots(self, user_id: int) -> set[str]:
+    def user_slots(self, user_id: int) -> set[int]:
         return self._data.user_slots.get(user_id, set()).copy()
 
     @persist
-    def add_user_slot(self, user_id: int, slot: str) -> None:
-        if slot in self._data.user_slots.get(user_id, set()):
-            raise ADOSError(f"User is already registered for slot `{slot}`")
-        self._data.user_slots[user_id].add(slot)
+    def add_user_slot(self, user_id: int, slot: SlotInfo) -> None:
+        if slot.id in self._data.user_slots.get(user_id, set()):
+            raise ADOSError(f"User is already registered for slot `{slot.alias}`")
+        self._data.user_slots[user_id].add(slot.id)
 
     @persist
-    def remove_user_slot(self, user_id: int, slot: str) -> None:
-        if slot not in self._data.user_slots.get(user_id, set()):
-            raise ADOSError(f"User is not registered for slot `{slot}`")
-        self._data.user_slots[user_id].remove(slot)
+    def remove_user_slot(self, user_id: int, slot: SlotInfo) -> None:
+        if slot.id not in self._data.user_slots.get(user_id, set()):
+            raise ADOSError(f"User is not registered for slot `{slot.alias}`")
+        self._data.user_slots[user_id].remove(slot.id)
         if not self._data.user_slots[user_id]:
             self._data.user_slots.pop(user_id)
 

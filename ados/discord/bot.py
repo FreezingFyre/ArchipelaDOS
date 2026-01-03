@@ -42,16 +42,16 @@ class ADOSBot(commands.Bot):
         self._config = config
 
         self._state = ADOSState(config)
-        self._web_client = WebClient(config)
-        self._world_client = WorldSocketClient(config)
+        self._web = WebClient(config)
+        self._world = WorldSocketClient(config)
 
-        bot_commands = Commands(self._state, self._web_client, self._world_client)
+        bot_commands = Commands(self._state, self._web, self._world)
         self.add_cog(bot_commands)
 
     async def execute(self) -> None:
         _log.info("Starting ArchipelaDOS bot with configuration: %s", self._config.model_dump_json())
-        await self._web_client.refresh()
-        await self._world_client.connect(self._web_client.server_url)
+        await self._web.refresh()
+        await self._world.connect(self._web.server_url)
         await super().start(self._config.discord_token)
         _log.info("Stopping ArchipelaDOS bot")
 
