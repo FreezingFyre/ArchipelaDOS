@@ -4,7 +4,6 @@ import sys
 from ados.config import load_config
 from ados.discord.bot import ADOSBot
 from ados.logger import initialize_logging
-from ados.state import ADOSState
 
 DEFAULT_CONFIG_PATH = "config.yaml"
 
@@ -23,8 +22,7 @@ async def main() -> None:
         print("\n".join(line for line in str(ex).splitlines() if "further information" not in line))
         sys.exit(1)
 
-    state = ADOSState(config)
-    bot = ADOSBot(config, state)
+    bot = ADOSBot(config)
     await bot.execute()
 
 

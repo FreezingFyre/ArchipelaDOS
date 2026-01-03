@@ -33,6 +33,7 @@ class LoggingBehavior(str, Enum):
 class ADOSConfig(BaseModel):
 
     archipelago_room: str
+    archipelago_slot: str
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
     discord_token: str = Field(..., exclude=True, repr=False)

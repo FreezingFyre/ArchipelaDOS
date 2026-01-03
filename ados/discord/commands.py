@@ -5,6 +5,9 @@ from discord.ext import commands
 from discord.ext.commands.context import Context
 from discord.ext.commands.errors import UserInputError
 
+from ados.arch.socket import WorldSocketClient
+from ados.arch.web import WebClient
+from ados.common import ADOSError
 from ados.discord.utils import send_message, send_success
 from ados.state import ADOSState
 
@@ -17,9 +20,11 @@ def _strip_quotes(value: Optional[str]) -> Optional[str]:
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, state: ADOSState):
+    def __init__(self, state: ADOSState, web_client: WebClient, world_client: WorldSocketClient):
         super().__init__()
         self._state = state
+        self._web_client = web_client
+        self._world_client = world_client
 
     class SlotFlags(commands.FlagConverter):
         slot: Optional[str] = None
@@ -79,7 +84,21 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="refresh", help="Refresh the room on archipelago.gg", ignore_extra=False)
     async def refresh(self, ctx: BotContext) -> None:
-        pass  # TODO: Implement
+        await self._web_client.refresh()
+        await self._world_client.connect(self._web_client.server_url)
+        await send_success(ctx, f"Refreshed room data from <{self._web_client.room_url}>")
+
+    @commands.command(name="info", help="Get information about the Archipelago room", ignore_extra=False)
+    async def info(self, ctx: BotContext) -> None:
+        port = self._web_client.server_url.split(":")[-1]
+        message = (
+            f"Room Information:\n"
+            f"- Port: {port}\n"
+            f"- Room URL: <{self._web_client.room_url}>\n"
+            f"- Tracker URL: <{self._web_client.tracker_url}>\n"
+            f"- Available Slots: SLOTS"
+        )
+        await send_message(ctx, message)
 
     ################################################
     ########### SLOT MANAGEMENT COMMANDS ###########
@@ -91,17 +110,17 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, slot: str) -> None:
-        await self._state.add_user_slot(ctx.author.id, slot)
+        self._state.add_user_slot(ctx.author.id, slot)
         await send_success(ctx, f"You have been registered for slot `{slot}`")
 
     @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_remove(self, ctx: BotContext, slot: str) -> None:
-        await self._state.remove_user_slot(ctx.author.id, slot)
+        self._state.remove_user_slot(ctx.author.id, slot)
         await send_success(ctx, f"You have been unregistered from slot `{slot}`")
 
     @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_list(self, ctx: BotContext) -> None:
-        user_slots = await self._state.user_slots(ctx.author.id)
+        user_slots = self._state.user_slots(ctx.author.id)
         if not user_slots:
             await send_message(ctx, "You are not registered for any slots")
         else:
@@ -110,7 +129,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @slot.command(name="clear", help="Unregisters you from all slots", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_clear(self, ctx: BotContext) -> None:
-        await self._state.clear_user_slots(ctx.author.id)
+        self._state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
 
     ################################################
@@ -123,11 +142,11 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @replay.command(name="recent", help="Replay items received since last call (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
     async def replay_recent(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @replay.command(name="all", help="Replay all items recieved since game start (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
     async def replay_all(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @commands.command(name="ketchmeup", help="Alias of '!replay recent'", ignore_extra=False)
     async def ketchmeup(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
@@ -143,19 +162,19 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @hint.command(name="points", help="Show hint points (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_points(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @hint.command(name="use", help="Use a hint for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_use(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_list(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @hint.command(name="listall", help="List all hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_listall(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     ################################################
     ############ SUBSCRIPTION COMMANDS #############
@@ -167,19 +186,19 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="add", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_add(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @subscribe.command(name="remove", help="Unsubscribes you from the given item (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @subscribe.command(name="list", help="Lists your active item subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_list(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @subscribe.command(name="clear", help="Unsubscribes you from all items (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     ################################################
     ################ STATS COMMANDS ################
@@ -187,8 +206,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="checks", help="Outputs data on completed/total checks per slot", ignore_extra=False)
     async def checks(self, ctx: BotContext, mode: Literal["list", "graph"]) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
     async def deaths(self, ctx: BotContext, mode: Literal["list", "graph"]) -> None:
-        pass  # TODO: Implement
+        raise ADOSError("Not yet implemented")  # TODO: Implement

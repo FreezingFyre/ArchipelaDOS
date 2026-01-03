@@ -12,6 +12,8 @@ from discord.ext.commands.errors import (
     UserInputError,
 )
 
+from ados.arch.socket import WorldSocketClient
+from ados.arch.web import WebClient
 from ados.common import ADOSError
 from ados.config import ADOSConfig
 from ados.discord.commands import Commands
@@ -28,24 +30,28 @@ _log = logging.getLogger(__name__)
 # messages based on Archipelago events, and storage of bot state.
 class ADOSBot(commands.Bot):
 
-    def __init__(self, config: ADOSConfig, state: ADOSState):
+    def __init__(self, config: ADOSConfig):
         intents = discord.Intents.default()
         intents.message_content = True
         help_command = HelpCommand()  # type: ignore[no-untyped-call]
         super().__init__(command_prefix="!", intents=intents, help_command=help_command)
-
-        bot_commands = Commands(state)
-        # Need to set the help_command's cog so "help" is grouped with other commands
-        # help_command.cog = bot_commands
-        self.add_cog(bot_commands)
 
         # Guild and channel IDs start unset, and are populated in on_ready()
         self._guild_id: Optional[int] = None
         self._channel_ids: set[int] = set()
         self._config = config
 
+        self._state = ADOSState(config)
+        self._web_client = WebClient(config)
+        self._world_client = WorldSocketClient(config)
+
+        bot_commands = Commands(self._state, self._web_client, self._world_client)
+        self.add_cog(bot_commands)
+
     async def execute(self) -> None:
         _log.info("Starting ArchipelaDOS bot with configuration: %s", self._config.model_dump_json())
+        await self._web_client.refresh()
+        await self._world_client.connect(self._web_client.server_url)
         await super().start(self._config.discord_token)
         _log.info("Stopping ArchipelaDOS bot")
 
@@ -115,8 +121,8 @@ class ADOSBot(commands.Bot):
             _log.info("Invalid user command '%s': %s", context.message.content, exception)
             await send_failure(context, f"Invalid command: {exception} - Use `!help` to see what's available.")
         elif isinstance(exception, CommandInvokeError) and isinstance(exception.original, ADOSError):
-            _log.info("Could not process user command '%s': %s", context.message.content, exception.original)
-            await send_failure(context, f"Could not process command: {exception.original}")
+            _log.info("Error running user command '%s': %s", context.message.content, exception.original)
+            await send_failure(context, f"Error running command: {exception.original}")
         else:
             _log.warning("Unexpected error processing user command '%s': %s", context.message.content, exception)
             await send_failure(context, "Something went wrong while processing your command. Try again later.")

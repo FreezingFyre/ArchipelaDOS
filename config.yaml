@@ -7,6 +7,10 @@
 # ID is "93eBTEhDS_uu9-JsAl5YbQ".
 archipelago_room: null
 
+# The Archipelago slot name to use when connecting. This can be any slot in the multiworld
+# if you did not include ArchipelaDOS.yaml during generation.
+archipelago_slot: ArchipelaDOS
+
 # The Discord bot token used to authenticate with the Discord API.
 discord_token: null
 

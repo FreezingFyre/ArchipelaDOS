@@ -1,0 +1,7 @@
+# Use this YAML when generating the multiworld to allow ArchipelaDOS to connect properly.
+# If you do not do this, you need to configure the ArchipelaDOS bot to use a different
+# slot in your multiworld.
+
+name: ArchipelaDOS
+game: Archipelago
+Archipelago: {}
