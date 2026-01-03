@@ -1,3 +1,8 @@
+# ArchipelaDOS files
+devenv/
+data/
+logs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -8,7 +13,6 @@ __pycache__/
 
 # Distribution / packaging
 build/
-devenv/
 dist/
 eggs/
 .eggs/

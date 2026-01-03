@@ -1,3 +1,4 @@
+import asyncio
 import sys
 
 from ados.config import load_config
@@ -7,7 +8,7 @@ from ados.logger import initialize_logging
 DEFAULT_CONFIG_PATH = "config.yaml"
 
 
-def main() -> None:
+async def main() -> None:
 
     if len(sys.argv) > 2:
         print("Usage: python server.py [config_path]")
@@ -22,8 +23,11 @@ def main() -> None:
         sys.exit(1)
 
     bot = ADOSBot(config)
-    bot.execute()
+    await bot.execute()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
