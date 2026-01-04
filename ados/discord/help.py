@@ -3,7 +3,7 @@ from typing import NamedTuple, Optional
 from discord.ext import commands
 from discord.ext.commands.flags import FlagsMeta
 
-from ados.discord.utils import send_failure, send_message
+from ados.discord.utils import COMMAND_PREFIX, send_failure, send_message
 
 
 class CommandData(NamedTuple):
@@ -37,9 +37,9 @@ class HelpCommand(commands.HelpCommand):
         name_len = max(len(data.name) for data in all_commands)
         for data in all_commands:
             padding = " " * (name_len - len(data.name))
-            message_lines.append(f"  !{data.name}{padding}  {data.brief}")
+            message_lines.append(f"  {COMMAND_PREFIX}{data.name}{padding}  {data.brief}")
 
-        message_lines.append("\nType '!help <command>' for more info on a particular command.")
+        message_lines.append("\nType '{COMMAND_PREFIX}help <command>' for more info on a particular command.")
         message = "\n".join(message_lines)
         await send_message(self.context, f"```{message}```", reply=True)
 
@@ -53,7 +53,7 @@ class HelpCommand(commands.HelpCommand):
         all_commands.sort(key=lambda data: data.name)
 
         message_lines: list[str] = []
-        message_lines.append(f"!{group.name}\n")
+        message_lines.append(f"{COMMAND_PREFIX}{group.name}\n")
         if group.help:
             message_lines.append(f"{group.help}\n")
         message_lines.append("Available sub-commands:")
@@ -63,7 +63,9 @@ class HelpCommand(commands.HelpCommand):
             padding = " " * (name_len - len(data.name))
             message_lines.append(f"  {data.name}{padding}  {data.brief}")
 
-        message_lines.append(f"\nType '!help {group.name} <command>' for more info on a particular command.")
+        message_lines.append(
+            f"\nType '{COMMAND_PREFIX}help {group.name} <command>' for more info on a particular command."
+        )
         message = "\n".join(message_lines)
         await send_message(self.context, f"```{message}```", reply=True)
 
@@ -82,7 +84,7 @@ class HelpCommand(commands.HelpCommand):
             signature = signature.replace(f"<{param.name}>", " ".join(flags))
 
         message_lines: list[str] = []
-        message_lines.append(f"!{command.qualified_name} {signature}")
+        message_lines.append(f"{COMMAND_PREFIX}{command.qualified_name} {signature}")
         if command.help:
             message_lines.append(f"\n{command.help}")
 

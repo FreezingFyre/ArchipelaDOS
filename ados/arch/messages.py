@@ -4,12 +4,18 @@ from typing import Any, Iterator
 
 from websockets.typing import Data
 
-from ados.common import SlotInfo
+from ados.common import ItemInfo, LocationInfo, SlotInfo
 
 _log = logging.getLogger(__name__)
 
 ARCH_VERSION = "0.6.5"
 ARCH_MAJOR, ARCH_MINOR, ARCH_BUILD = [int(part) for part in ARCH_VERSION.split(".")]
+
+
+def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotInfo:
+    alias = player["alias"].replace(f"({player["name"]})", "").strip()
+    game = slots_info[str(player["slot"])]["game"]
+    return SlotInfo(id=player["slot"], name=player["name"], alias=alias, game=game)
 
 
 ################################################
@@ -21,6 +27,7 @@ def serialize(message: dict[str, Any]) -> str:
     return json.dumps([message])
 
 
+# Sent to the server to initiate a connection after receiving the RoomInfo message
 def connect_message(*, game: str, slot: str) -> str:
     return serialize(
         {
@@ -37,42 +44,84 @@ def connect_message(*, game: str, slot: str) -> str:
     )
 
 
+# Sent to the server to request the data package for the multiworld
+def get_data_package_message(games: list[str]) -> str:
+    return serialize(
+        {
+            "cmd": "GetDataPackage",
+            "games": games,
+        }
+    )
+
+
 ################################################
 ############### SERVER MESSAGES ################
 ################################################
 
 
+# Sent by the server after the client establishes a websocket connection
 class RoomInfoMessage:
     def __init__(self, data: dict[str, Any]) -> None:
-        pass
+        self.games: list[str] = data["games"]
 
 
+# Sent by the server in response to a GetDataPackage message
+class DataPackageMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.game_items: dict[str, list[ItemInfo]] = {}
+        self.game_locations: dict[str, list[LocationInfo]] = {}
+        for game, game_data in data["data"]["games"].items():
+            self.game_items[game] = [
+                ItemInfo(id=id, name=name, game=game) for name, id in game_data["item_name_to_id"].items()
+            ]
+            self.game_locations[game] = [
+                LocationInfo(id=id, name=name, game=game) for name, id in game_data["location_name_to_id"].items()
+            ]
+
+
+# Sent by the server in response to a Connect message if the connection is successful
 class ConnectedMessage:
     def __init__(self, data: dict[str, Any]) -> None:
-        self.slots: list[SlotInfo] = [
-            SlotInfo(id=info["slot"], name=info["name"], alias=info["alias"]) for info in data["players"]
-        ]
-        self.slot_id: int = data["slot"]
+        self.slot_id = int(data["slot"])
+        self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
+# Sent by the server in response to a Connect message if the connection is unsuccessful
 class ConnectionRefusedMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.errors: list[str] = data.get("errors", [])
 
 
-type ServerMessage = RoomInfoMessage | ConnectedMessage | ConnectionRefusedMessage
+# Sent by the server when the room information is updated -- particularly slot aliases
+class RoomUpdateMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
+
+
+# Sent by the server when one slot sends an item to another slot
+
+
+type ServerMessage = RoomInfoMessage | DataPackageMessage | ConnectedMessage | ConnectionRefusedMessage | RoomUpdateMessage
 
 
 def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
     for data in json.loads(raw_message):
-        cmd = data.get("cmd", None)
-        if cmd is None:
-            _log.warning("Received server message without 'cmd' field: %s", data)
-            continue
+        try:
+            cmd = data.get("cmd", None)
+            if cmd is None:
+                _log.warning("Received server message without 'cmd' field: %s", data)
+                continue
 
-        if cmd == "RoomInfo":
-            yield RoomInfoMessage(data)
-        elif cmd == "Connected":
-            yield ConnectedMessage(data)
-        elif cmd == "ConnectionRefused":
-            yield ConnectionRefusedMessage(data)
+            if cmd == "RoomInfo":
+                yield RoomInfoMessage(data)
+            elif cmd == "DataPackage":
+                yield DataPackageMessage(data)
+            elif cmd == "Connected":
+                yield ConnectedMessage(data)
+            elif cmd == "ConnectionRefused":
+                yield ConnectionRefusedMessage(data)
+            elif cmd == "RoomUpdate" and "players" in data:
+                yield RoomUpdateMessage(data)
+
+        except Exception as ex:
+            _log.error("Failed to deserialize server message: %s - %s", ex, data)

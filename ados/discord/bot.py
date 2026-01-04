@@ -12,13 +12,13 @@ from discord.ext.commands.errors import (
     UserInputError,
 )
 
-from ados.arch.socket import WorldSocketClient
+from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import ADOSError
 from ados.config import ADOSConfig
 from ados.discord.commands import Commands
 from ados.discord.help import HelpCommand
-from ados.discord.utils import THREAD_NAME, send_failure
+from ados.discord.utils import COMMAND_PREFIX, THREAD_NAME, send_failure
 from ados.state import ADOSState
 
 type BotContext = Context[commands.Bot]
@@ -34,24 +34,24 @@ class ADOSBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         help_command = HelpCommand()  # type: ignore[no-untyped-call]
-        super().__init__(command_prefix="!", intents=intents, help_command=help_command)
+        super().__init__(command_prefix=COMMAND_PREFIX, intents=intents, help_command=help_command)
 
         # Guild and channel IDs start unset, and are populated in on_ready()
         self._guild_id: Optional[int] = None
         self._channel_ids: set[int] = set()
         self._config = config
 
-        self._state = ADOSState(config)
-        self._web_client = WebClient(config)
-        self._world_client = WorldSocketClient(config)
+        self._web = WebClient(config)
+        self._socket = SocketClient(config, slot_name=config.archipelago_slot, game="Archipelago", fetch_data=True)
+        self._state = ADOSState(config, self._socket)
 
-        bot_commands = Commands(self._state, self._web_client, self._world_client)
+        bot_commands = Commands(self._state, self._web, self._socket)
         self.add_cog(bot_commands)
 
     async def execute(self) -> None:
         _log.info("Starting ArchipelaDOS bot with configuration: %s", self._config.model_dump_json())
-        await self._web_client.refresh()
-        await self._world_client.connect(self._web_client.server_url)
+        await self._web.refresh()
+        await self._socket.connect(self._web.server_url)
         await super().start(self._config.discord_token)
         _log.info("Stopping ArchipelaDOS bot")
 
@@ -119,7 +119,9 @@ class ADOSBot(commands.Bot):
     async def on_command_error(self, context: BotContext, exception: CommandError) -> None:
         if isinstance(exception, (CommandNotFound, ConversionError, UserInputError)):
             _log.info("Invalid user command '%s': %s", context.message.content, exception)
-            await send_failure(context, f"Invalid command: {exception} - Use `!help` to see what's available.")
+            await send_failure(
+                context, f"Invalid command: {exception} - Use `{COMMAND_PREFIX}help` to see what's available."
+            )
         elif isinstance(exception, CommandInvokeError) and isinstance(exception.original, ADOSError):
             _log.info("Error running user command '%s': %s", context.message.content, exception.original)
             await send_failure(context, f"Error running command: {exception.original}")
