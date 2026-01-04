@@ -4,6 +4,7 @@ from discord.ext.commands.context import Context
 
 type BotContext = Context[commands.Bot]
 
+COMMAND_PREFIX = "!"
 THREAD_NAME = "ArchipelaDOS"
 
 

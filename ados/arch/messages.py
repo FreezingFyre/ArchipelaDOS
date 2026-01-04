@@ -4,7 +4,7 @@ from typing import Any, Iterator
 
 from websockets.typing import Data
 
-from ados.common import SlotInfo
+from ados.common import ItemInfo, LocationInfo, SlotInfo
 
 _log = logging.getLogger(__name__)
 
@@ -12,9 +12,10 @@ ARCH_VERSION = "0.6.5"
 ARCH_MAJOR, ARCH_MINOR, ARCH_BUILD = [int(part) for part in ARCH_VERSION.split(".")]
 
 
-def _slot_from_data(data: dict[str, Any]) -> SlotInfo:
-    alias = data["alias"].replace(f"({data["name"]})", "").strip()
-    return SlotInfo(id=data["slot"], name=data["name"], alias=alias)
+def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotInfo:
+    alias = player["alias"].replace(f"({player["name"]})", "").strip()
+    game = slots_info[str(player["slot"])]["game"]
+    return SlotInfo(id=player["slot"], name=player["name"], alias=alias, game=game)
 
 
 ################################################
@@ -43,6 +44,16 @@ def connect_message(*, game: str, slot: str) -> str:
     )
 
 
+# Sent to the server to request the data package for the multiworld
+def get_data_package_message(games: list[str]) -> str:
+    return serialize(
+        {
+            "cmd": "GetDataPackage",
+            "games": games,
+        }
+    )
+
+
 ################################################
 ############### SERVER MESSAGES ################
 ################################################
@@ -51,14 +62,28 @@ def connect_message(*, game: str, slot: str) -> str:
 # Sent by the server after the client establishes a websocket connection
 class RoomInfoMessage:
     def __init__(self, data: dict[str, Any]) -> None:
-        pass
+        self.games: list[str] = data["games"]
+
+
+# Sent by the server in response to a GetDataPackage message
+class DataPackageMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.game_items: dict[str, list[ItemInfo]] = {}
+        self.game_locations: dict[str, list[LocationInfo]] = {}
+        for game, game_data in data["data"]["games"].items():
+            self.game_items[game] = [
+                ItemInfo(id=id, name=name, game=game) for name, id in game_data["item_name_to_id"].items()
+            ]
+            self.game_locations[game] = [
+                LocationInfo(id=id, name=name, game=game) for name, id in game_data["location_name_to_id"].items()
+            ]
 
 
 # Sent by the server in response to a Connect message if the connection is successful
 class ConnectedMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slot_id = int(data["slot"])
-        self.slots = [_slot_from_data(info) for info in data["players"]]
+        self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
 # Sent by the server in response to a Connect message if the connection is unsuccessful
@@ -70,10 +95,13 @@ class ConnectionRefusedMessage:
 # Sent by the server when the room information is updated -- particularly slot aliases
 class RoomUpdateMessage:
     def __init__(self, data: dict[str, Any]) -> None:
-        self.slots = [_slot_from_data(info) for info in data["players"]]
+        self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
-type ServerMessage = RoomInfoMessage | ConnectedMessage | ConnectionRefusedMessage | RoomUpdateMessage
+# Sent by the server when one slot sends an item to another slot
+
+
+type ServerMessage = RoomInfoMessage | DataPackageMessage | ConnectedMessage | ConnectionRefusedMessage | RoomUpdateMessage
 
 
 def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
@@ -86,6 +114,8 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
 
             if cmd == "RoomInfo":
                 yield RoomInfoMessage(data)
+            elif cmd == "DataPackage":
+                yield DataPackageMessage(data)
             elif cmd == "Connected":
                 yield ConnectedMessage(data)
             elif cmd == "ConnectionRefused":

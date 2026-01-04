@@ -5,10 +5,10 @@ from discord.ext import commands
 from discord.ext.commands.context import Context
 from discord.ext.commands.errors import UserInputError
 
-from ados.arch.socket import WorldSocketClient
+from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import ADOSError
-from ados.discord.utils import send_message, send_success
+from ados.discord.utils import COMMAND_PREFIX, send_message, send_success
 from ados.state import ADOSState
 
 type BotContext = Context[commands.Bot]
@@ -20,11 +20,11 @@ def _strip_quotes(value: Optional[str]) -> Optional[str]:
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, state: ADOSState, web: WebClient, world: WorldSocketClient):
+    def __init__(self, state: ADOSState, web: WebClient, socket: SocketClient):
         super().__init__()
         self._state = state
         self._web = web
-        self._world = world
+        self._socket = socket
 
     class SlotFlags(commands.FlagConverter):
         slot: Optional[str] = None
@@ -85,13 +85,13 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @commands.command(name="refresh", help="Refresh the room on archipelago.gg", ignore_extra=False)
     async def refresh(self, ctx: BotContext) -> None:
         await self._web.refresh()
-        await self._world.connect(self._web.server_url)
+        await self._socket.connect(self._web.server_url)
         await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
 
     @commands.command(name="info", help="Get information about the Archipelago room", ignore_extra=False)
     async def info(self, ctx: BotContext) -> None:
         port = self._web.server_url.split(":")[-1]
-        slots_list = ", ".join(f"`{slot.alias}`" for slot in self._world.slots)
+        slots_list = ", ".join(f"`{slot}`" for slot in self._state.all_slots())
         message = (
             f"Room Information:\n"
             f"- Port: {port}\n"
@@ -107,28 +107,28 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.group(name="slot", help="Manage slot registrations", invoke_without_command=True)  # type: ignore[arg-type]
     async def slot(self, ctx: BotContext) -> None:
-        raise UserInputError("Must specify a sub-command for `!slot`")
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}slot`")
 
     @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, slot: str) -> None:
-        info = self._world.resolve_slot(slot)
-        self._state.add_user_slot(ctx.author.id, info)
-        await send_success(ctx, f"You have been registered for slot `{info.alias}`")
+        slot_info = self._state.resolve_slot(slot)
+        self._state.add_user_slot(ctx.author.id, slot_info)
+        await send_success(ctx, f"You have been registered for slot `{slot_info}`")
 
     @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_remove(self, ctx: BotContext, slot: str) -> None:
-        info = self._world.resolve_slot(slot)
-        self._state.remove_user_slot(ctx.author.id, info)
-        await send_success(ctx, f"You have been unregistered from slot `{info.alias}`")
+        slot_info = self._state.resolve_slot(slot)
+        self._state.remove_user_slot(ctx.author.id, slot_info)
+        await send_success(ctx, f"You have been unregistered from slot `{slot_info}`")
 
     @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_list(self, ctx: BotContext) -> None:
-        slot_ids = self._state.user_slots(ctx.author.id)
-        if not slot_ids:
+        slot_infos = self._state.user_slots(ctx.author.id)
+        if not slot_infos:
             await send_message(ctx, "You are not registered for any slots")
         else:
-            slot_aliases = [self._world.resolve_slot(slot_id).alias for slot_id in slot_ids]
-            slot_list = ", ".join(f"`{slot}`" for slot in sorted(slot_aliases))
+            slot_names = [str(slot_info) for slot_info in slot_infos]
+            slot_list = ", ".join(f"`{slot_name}`" for slot_name in sorted(slot_names))
             await send_message(ctx, f"You are registered for the following slots: {slot_list}")
 
     @slot.command(name="clear", help="Unregisters you from all slots", ignore_extra=False)  # type: ignore[arg-type]
@@ -142,7 +142,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.group(name="replay", help="View previously received items for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
     async def replay(self, ctx: BotContext) -> None:
-        raise UserInputError("Must specify a sub-command for `!replay`")
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}replay`")
 
     @replay.command(name="recent", help="Replay items received since last call (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
     async def replay_recent(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
@@ -152,7 +152,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def replay_all(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
         raise ADOSError("Not yet implemented")  # TODO: Implement
 
-    @commands.command(name="ketchmeup", help="Alias of '!replay recent'", ignore_extra=False)
+    @commands.command(name="ketchmeup", help=f"Alias of '{COMMAND_PREFIX}replay recent'", ignore_extra=False)
     async def ketchmeup(self, ctx: BotContext, *, flags: SlotLevelFlags) -> None:
         await self.replay_recent(ctx, flags=flags)  # type: ignore[arg-type]
 
@@ -162,7 +162,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.group(name="hint", help="View and use hints for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
     async def hint(self, ctx: BotContext) -> None:
-        raise UserInputError("Must specify a sub-command for `!hint`")
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}hint`")
 
     @hint.command(name="points", help="Show hint points (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_points(self, ctx: BotContext, *, flags: SlotFlags) -> None:
@@ -186,7 +186,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.group(name="subscribe", help="Manage item subscriptions, which will notify you on item send", invoke_without_command=True)  # type: ignore[arg-type]
     async def subscribe(self, ctx: BotContext) -> None:
-        raise UserInputError("Must specify a sub-command for `!subscribe`")
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}subscribe`")
 
     @subscribe.command(name="add", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_add(self, ctx: BotContext, item: str, *, flags: SlotFlags) -> None:
