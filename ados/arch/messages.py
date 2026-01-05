@@ -4,7 +4,7 @@ from typing import Any, Iterator
 
 from websockets.typing import Data
 
-from ados.common import ItemInfo, LocationInfo, SlotInfo
+from ados.common import ItemInfo, ItemRarity, LocationInfo, SlotInfo
 
 _log = logging.getLogger(__name__)
 
@@ -99,9 +99,30 @@ class RoomUpdateMessage:
 
 
 # Sent by the server when one slot sends an item to another slot
+class ItemSendMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        item_data = data["item"]
+        self.item_id: int = item_data["item"]
+        self.location_id: int = item_data["location"]
+        self.to_slot_id: int = data["receiving"]
+        self.from_slot_id: int = item_data["player"]
+
+        self.rarity = ItemRarity.FILLER
+        rarity_flag = item_data["flags"]
+        for rarity in (ItemRarity.TRAP, ItemRarity.PROGRESSION, ItemRarity.USEFUL):
+            if rarity_flag & rarity:
+                self.rarity = rarity
+                break
 
 
-type ServerMessage = RoomInfoMessage | DataPackageMessage | ConnectedMessage | ConnectionRefusedMessage | RoomUpdateMessage
+type ServerMessage = (
+    RoomInfoMessage
+    | DataPackageMessage
+    | ConnectedMessage
+    | ConnectionRefusedMessage
+    | RoomUpdateMessage
+    | ItemSendMessage
+)
 
 
 def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
@@ -122,6 +143,8 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ConnectionRefusedMessage(data)
             elif cmd == "RoomUpdate" and "players" in data:
                 yield RoomUpdateMessage(data)
+            elif cmd == "PrintJSON" and data["type"] == "ItemSend":
+                yield ItemSendMessage(data)
 
         except Exception as ex:
             _log.error("Failed to deserialize server message: %s - %s", ex, data)

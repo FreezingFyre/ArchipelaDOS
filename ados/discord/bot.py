@@ -3,7 +3,6 @@ from typing import Optional
 
 import discord
 from discord.ext import commands
-from discord.ext.commands.context import Context
 from discord.ext.commands.errors import (
     CommandError,
     CommandInvokeError,
@@ -17,11 +16,9 @@ from ados.arch.web import WebClient
 from ados.common import ADOSError
 from ados.config import ADOSConfig
 from ados.discord.commands import Commands
+from ados.discord.common import COMMAND_PREFIX, BotContext, send_failure
 from ados.discord.help import HelpCommand
-from ados.discord.utils import COMMAND_PREFIX, THREAD_NAME, send_failure
 from ados.state import ADOSState
-
-type BotContext = Context[commands.Bot]
 
 _log = logging.getLogger(__name__)
 
@@ -45,7 +42,7 @@ class ADOSBot(commands.Bot):
         self._socket = SocketClient(config, slot_name=config.archipelago_slot, game="Archipelago", fetch_data=True)
         self._state = ADOSState(config, self._socket)
 
-        bot_commands = Commands(self._state, self._web, self._socket)
+        bot_commands = Commands(self._web, self._socket, self._state)
         self.add_cog(bot_commands)
 
     async def execute(self) -> None:
@@ -105,12 +102,12 @@ class ADOSBot(commands.Bot):
         await super().on_message(message)  # type: ignore[no-untyped-call]
 
         # Always archive bot-created threads, even if not from commands
-        if (
-            isinstance(message.channel, discord.Thread)
-            and message.channel.name == THREAD_NAME
-            and not message.channel.archived
-        ):
-            await message.channel.edit(archived=True)
+        # if (
+        #     isinstance(message.channel, discord.Thread)
+        #     and message.channel.name == THREAD_NAME
+        #     and not message.channel.archived
+        # ):
+        #     await message.channel.edit(archived=True)
 
     # Handles different classes of errors raised during command processing.
     #   - Case #1: User syntax mistakes
@@ -119,12 +116,10 @@ class ADOSBot(commands.Bot):
     async def on_command_error(self, context: BotContext, exception: CommandError) -> None:
         if isinstance(exception, (CommandNotFound, ConversionError, UserInputError)):
             _log.info("Invalid user command '%s': %s", context.message.content, exception)
-            await send_failure(
-                context, f"Invalid command: {exception} - Use `{COMMAND_PREFIX}help` to see what's available."
-            )
+            await send_failure(context, f"Invalid command: {exception}")
         elif isinstance(exception, CommandInvokeError) and isinstance(exception.original, ADOSError):
             _log.info("Error running user command '%s': %s", context.message.content, exception.original)
             await send_failure(context, f"Error running command: {exception.original}")
         else:
-            _log.warning("Unexpected error processing user command '%s': %s", context.message.content, exception)
-            await send_failure(context, "Something went wrong while processing your command. Try again later.")
+            _log.error("Unexpected error processing user command '%s': %s", context.message.content, exception)
+            await send_failure(context, "Something went wrong while processing your command.")

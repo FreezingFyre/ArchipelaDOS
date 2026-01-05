@@ -94,5 +94,5 @@ class SocketClient:
                 await self._handle_message(message)
 
     async def _handle_message(self, message: ServerMessage) -> None:
-        for handler in self._handlers[type(message)]:
+        for handler in self._handlers.get(type(message), []):
             await handler(message)

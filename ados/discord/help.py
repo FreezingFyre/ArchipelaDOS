@@ -3,7 +3,7 @@ from typing import NamedTuple, Optional
 from discord.ext import commands
 from discord.ext.commands.flags import FlagsMeta
 
-from ados.discord.utils import COMMAND_PREFIX, send_failure, send_message
+from ados.discord.common import COMMAND_PREFIX, send_failure, send_message
 
 
 class CommandData(NamedTuple):
@@ -39,7 +39,7 @@ class HelpCommand(commands.HelpCommand):
             padding = " " * (name_len - len(data.name))
             message_lines.append(f"  {COMMAND_PREFIX}{data.name}{padding}  {data.brief}")
 
-        message_lines.append("\nType '{COMMAND_PREFIX}help <command>' for more info on a particular command.")
+        message_lines.append(f"\nType '{COMMAND_PREFIX}help <command>' for more info on a particular command.")
         message = "\n".join(message_lines)
         await send_message(self.context, f"```{message}```", reply=True)
 
@@ -79,8 +79,11 @@ class HelpCommand(commands.HelpCommand):
             if not isinstance(param.annotation, FlagsMeta):
                 continue
             flags: list[str] = []
-            for flag_name in param.annotation.__commands_flags__:
-                flags.append(f"[{flag_name}:...]")
+            for flag_name, flag_details in param.annotation.__commands_flags__.items():
+                if flag_details.positional:
+                    flags.insert(0, f"<{flag_name}>")
+                else:
+                    flags.append(f"[{flag_name}:...]")
             signature = signature.replace(f"<{param.name}>", " ".join(flags))
 
         message_lines: list[str] = []
@@ -92,4 +95,4 @@ class HelpCommand(commands.HelpCommand):
         await send_message(self.context, f"```{message}```", reply=True)
 
     async def send_error_message(self, error: str) -> None:
-        await send_failure(self.context, error)
+        await send_failure(self.context, error, reply=True)
