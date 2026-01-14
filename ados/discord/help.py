@@ -84,7 +84,7 @@ class HelpCommand(commands.HelpCommand):
                 if flag_details.positional:
                     flags.insert(0, f"<{flag_name}>")
                 elif isinstance(flag_details.annotation, EnumType):
-                    enum_values = "|".join(cast(Enum, e).value for e in flag_details.annotation)
+                    enum_values = "|".join(cast(Enum, e).value for e in flag_details.annotation)  # type: ignore[var-annotated]
                     flags.append(f"[{flag_name}:{enum_values}]")
                 else:
                     flags.append(f"[{flag_name}:...]")

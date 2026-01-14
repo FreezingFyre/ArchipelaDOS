@@ -128,6 +128,7 @@ class MessageBroadcaster:
             else:
                 content = f"`{from_slot}` subjected {to_slot} to {highlight(item)}"
         else:
+            # pylint: disable-next = else-if-used
             if self_send:
                 content = f"`{from_slot}` found their own {highlight(item)}"
             else:
