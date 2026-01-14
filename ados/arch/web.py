@@ -44,7 +44,7 @@ class WebClient:
         _log.info("Refreshing web information from '%s'", self.room_url)
 
         async with ClientSession(timeout=ClientTimeout(5)) as http_session:
-            http_ret = await http_session.get(self.room_url)
+            http_ret = await http_session.get(f"{self.room_url}?update")
             if not http_ret.ok:
                 raise ADOSError(f"Failed to access room at '{self.room_url}' (status code {http_ret.status})")
 

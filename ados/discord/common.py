@@ -1,3 +1,5 @@
+from typing import Any
+
 import discord
 from discord.ext import commands
 from discord.ext.commands.context import Context
@@ -8,6 +10,11 @@ COMMAND_PREFIX = "!"
 THREAD_NAME = "ArchipelaDOS"
 
 MAX_MESSAGE_SIZE = 2000
+
+
+# We use a placeholder link to highlight text blue in Discord for some use cases.
+def highlight(text: Any) -> str:
+    return f"[`{text}`](<https://_>)"
 
 
 async def send_message(ctx: BotContext, message: str, *, reply: bool = False) -> None:

@@ -7,31 +7,36 @@ class ADOSError(Exception):
     pass
 
 
-# Defined levels of item rarity for use in commands and messages.
-class ItemRarity(int, Enum):
+# Defined item categories for use in commands and messages. These can technically
+# overlap per the Archipelago spec, but we treat them as mutually exclusive.
+class ItemCategory(int, Enum):
     PROGRESSION = 0b001
     USEFUL = 0b010
     FILLER = 0b000
     TRAP = 0b100
 
 
-# Defined filters for item rarity
-class ItemRarityFilter(str, Enum):
+# Defined filters for item categories. Generally matches the exact ItemCategory of
+# the same name, though USEFUL and ALL include items categorized below them as well.
+class ItemCategoryFilter(str, Enum):
+    NONE = "none"
     PROGRESSION = "progression"
     USEFUL = "useful"
     ALL = "all"
+    TRAP = "trap"
 
-
-def check_rarity(rarity: ItemRarity, item_filter: ItemRarityFilter) -> bool:
-    if rarity == ItemRarity.TRAP:
+    def check(self, category: ItemCategory) -> bool:
+        if self == ItemCategoryFilter.NONE:
+            return False
+        if category == ItemCategory.TRAP:
+            return self == ItemCategoryFilter.TRAP
+        if self == ItemCategoryFilter.ALL:
+            return True
+        if self == ItemCategoryFilter.USEFUL:
+            return category in (ItemCategory.USEFUL, ItemCategory.PROGRESSION)
+        if self == ItemCategoryFilter.PROGRESSION:
+            return category == ItemCategory.PROGRESSION
         return False
-    if item_filter == ItemRarityFilter.ALL:
-        return True
-    if item_filter == ItemRarityFilter.USEFUL:
-        return rarity in (ItemRarity.USEFUL, ItemRarity.PROGRESSION)
-    if item_filter == ItemRarityFilter.PROGRESSION:
-        return rarity == ItemRarity.PROGRESSION
-    return False
 
 
 # Stores information about a particular slot in the multiworld. The id, name,
@@ -76,4 +81,4 @@ class SentItemInfo(NamedTuple):
     location_name: str
     to_slot_id: int
     from_slot_id: int
-    rarity: ItemRarity
+    category: ItemCategory

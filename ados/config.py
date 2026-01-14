@@ -20,6 +20,10 @@ def _transform_logging_level(value: Any) -> int:
         raise ValueError(f"invalid logging level '{value}'") from ex
 
 
+def _expand_path(value: Optional[str]) -> Optional[str]:
+    return os.path.abspath(value) if value is not None else None
+
+
 class LoggingBehavior(str, Enum):
     NONE = "none"
     CONSOLE_ONLY = "console_only"
@@ -28,22 +32,30 @@ class LoggingBehavior(str, Enum):
     FILE_DIRECTORY = "file_directory"
 
 
+class BroadcastCategory(str, Enum):
+    PROGRESSION_ITEMS = "progression_items"
+    USEFUL_ITEMS = "useful_items"
+    ALL_ITEMS = "all_items"
+    TRAP_ITEMS = "trap_items"
+    DEATH_LINKS = "death_links"
+
+
 # The main configuration class for ArchipelaDOS. Loaded from a YAML file on startup with strict
 # validation enforced by pydantic
 class ADOSConfig(BaseModel):
 
     archipelago_room: str
     archipelago_slot: str
+    data_path: Annotated[str, BeforeValidator(_expand_path)]
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
     discord_token: str = Field(..., exclude=True, repr=False)
     discord_server: str
-    discord_channels: list[str]
-
-    data_path: str
+    discord_command_channels: set[str]
+    discord_broadcast_channels: dict[str, set[BroadcastCategory]]
 
     logging_behavior: LoggingBehavior
-    logging_path: Optional[str]
+    logging_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
     logging_level: Annotated[int, BeforeValidator(_transform_logging_level)]
     logging_color: bool
 
@@ -52,17 +64,25 @@ class ADOSConfig(BaseModel):
     def _serialize_logging_level(self, level: int) -> str:
         return getLevelName(level)
 
-    # Expand paths to be absolute
-    @field_serializer("data_path", "logging_path")
-    def _expand_path(self, path: Optional[str]) -> Optional[str]:
-        return os.path.abspath(path) if path is not None else None
-
-    # Validate the logging path is set when needed
+    # Validate the logging path is set when needed, and that the broadcast channel configs
+    # are valid (only one item category filter is set per channel)
     @model_validator(mode="after")
     def _validate_logging(self) -> Self:
         if self.logging_behavior not in (LoggingBehavior.NONE, LoggingBehavior.CONSOLE_ONLY):
             if not self.logging_path:
                 raise ValueError("logging_path must be set for the selected logging_behavior")
+
+        item_categories = {
+            BroadcastCategory.PROGRESSION_ITEMS,
+            BroadcastCategory.USEFUL_ITEMS,
+            BroadcastCategory.ALL_ITEMS,
+        }
+        for categories in self.discord_broadcast_channels.values():
+            if len(item_categories.intersection(categories)) > 1:
+                raise ValueError(
+                    f"broadcast channel config cannot contain multiple of {[category.value for category in item_categories]}"
+                )
+
         return self
 
 

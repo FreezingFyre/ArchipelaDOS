@@ -1,10 +1,10 @@
 import json
 import logging
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 from websockets.typing import Data
 
-from ados.common import ItemInfo, ItemRarity, LocationInfo, SlotInfo
+from ados.common import ItemCategory, ItemInfo, LocationInfo, SlotInfo
 
 _log = logging.getLogger(__name__)
 
@@ -23,34 +23,34 @@ def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotI
 ################################################
 
 
-def serialize(message: dict[str, Any]) -> str:
-    return json.dumps([message])
-
-
 # Sent to the server to initiate a connection after receiving the RoomInfo message
 def connect_message(*, game: str, slot: str) -> str:
-    return serialize(
-        {
-            "cmd": "Connect",
-            "password": None,
-            "game": game,
-            "name": slot,
-            "uuid": "ArchipelaDOS",
-            "version": {"major": ARCH_MAJOR, "minor": ARCH_MINOR, "build": ARCH_BUILD, "class": "Version"},
-            "items_handling": 0b000,
-            "tags": ["TextOnly", "Tracker", "DeathLink"],
-            "slot_data": False,
-        }
+    return json.dumps(
+        [
+            {
+                "cmd": "Connect",
+                "password": None,
+                "game": game,
+                "name": slot,
+                "uuid": "ArchipelaDOS",
+                "version": {"major": ARCH_MAJOR, "minor": ARCH_MINOR, "build": ARCH_BUILD, "class": "Version"},
+                "items_handling": 0b000,
+                "tags": ["TextOnly", "Tracker", "DeathLink"],
+                "slot_data": False,
+            }
+        ]
     )
 
 
 # Sent to the server to request the data package for the multiworld
 def get_data_package_message(games: list[str]) -> str:
-    return serialize(
-        {
-            "cmd": "GetDataPackage",
-            "games": games,
-        }
+    return json.dumps(
+        [
+            {
+                "cmd": "GetDataPackage",
+                "games": games,
+            }
+        ]
     )
 
 
@@ -71,11 +71,9 @@ class DataPackageMessage:
         self.game_items: dict[str, list[ItemInfo]] = {}
         self.game_locations: dict[str, list[LocationInfo]] = {}
         for game, game_data in data["data"]["games"].items():
-            self.game_items[game] = [
-                ItemInfo(id=id, name=name, game=game) for name, id in game_data["item_name_to_id"].items()
-            ]
+            self.game_items[game] = [ItemInfo(id, name, game) for name, id in game_data["item_name_to_id"].items()]
             self.game_locations[game] = [
-                LocationInfo(id=id, name=name, game=game) for name, id in game_data["location_name_to_id"].items()
+                LocationInfo(id, name, game) for name, id in game_data["location_name_to_id"].items()
             ]
 
 
@@ -102,17 +100,24 @@ class RoomUpdateMessage:
 class ItemSendMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         item_data = data["item"]
+
         self.item_id: int = item_data["item"]
         self.location_id: int = item_data["location"]
         self.to_slot_id: int = data["receiving"]
         self.from_slot_id: int = item_data["player"]
 
-        self.rarity = ItemRarity.FILLER
-        rarity_flag = item_data["flags"]
-        for rarity in (ItemRarity.TRAP, ItemRarity.PROGRESSION, ItemRarity.USEFUL):
-            if rarity_flag & rarity:
-                self.rarity = rarity
+        self.category = ItemCategory.FILLER
+        category_flag = item_data["flags"]
+        for category in (ItemCategory.TRAP, ItemCategory.PROGRESSION, ItemCategory.USEFUL):
+            if category_flag & category:
+                self.category = category
                 break
+
+
+# Sent by the server when a slot triggers a death link
+class DeathLinkMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.slot_name: str = data["data"]["source"]
 
 
 type ServerMessage = (
@@ -122,6 +127,7 @@ type ServerMessage = (
     | ConnectionRefusedMessage
     | RoomUpdateMessage
     | ItemSendMessage
+    | DeathLinkMessage
 )
 
 
@@ -143,8 +149,10 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ConnectionRefusedMessage(data)
             elif cmd == "RoomUpdate" and "players" in data:
                 yield RoomUpdateMessage(data)
-            elif cmd == "PrintJSON" and data["type"] == "ItemSend":
+            elif cmd == "PrintJSON" and data.get("type") == "ItemSend":
                 yield ItemSendMessage(data)
+            elif cmd == "Bounced" and "DeathLink" in data.get("tags", []):
+                yield DeathLinkMessage(data)
 
         except Exception as ex:
             _log.error("Failed to deserialize server message: %s - %s", ex, data)

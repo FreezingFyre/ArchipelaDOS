@@ -1,4 +1,5 @@
-from typing import NamedTuple, Optional
+from enum import Enum, EnumType
+from typing import NamedTuple, Optional, cast
 
 from discord.ext import commands
 from discord.ext.commands.flags import FlagsMeta
@@ -82,6 +83,9 @@ class HelpCommand(commands.HelpCommand):
             for flag_name, flag_details in param.annotation.__commands_flags__.items():
                 if flag_details.positional:
                     flags.insert(0, f"<{flag_name}>")
+                elif isinstance(flag_details.annotation, EnumType):
+                    enum_values = "|".join(cast(Enum, e).value for e in flag_details.annotation)
+                    flags.append(f"[{flag_name}:{enum_values}]")
                 else:
                     flags.append(f"[{flag_name}:...]")
             signature = signature.replace(f"<{param.name}>", " ".join(flags))

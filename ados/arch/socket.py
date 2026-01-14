@@ -1,11 +1,20 @@
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Callable, Optional
 
 from websockets.asyncio.client import ClientConnection, connect
 
-from ados.arch.messages import *  # pylint: disable = unused-wildcard-import, wildcard-import
+from ados.arch.messages import (
+    ConnectedMessage,
+    ConnectionRefusedMessage,
+    DataPackageMessage,
+    RoomInfoMessage,
+    ServerMessage,
+    connect_message,
+    deserialize,
+    get_data_package_message,
+)
 from ados.common import ADOSError
 from ados.config import ADOSConfig
 
@@ -13,8 +22,8 @@ _log = logging.getLogger(__name__)
 
 
 # Provides access to the Archipelago socket interface. Establishes a connection in
-# the connect method, and allows customization of message handling by adding message
-# handlers for specific message types.
+# the connect method, and allows customization of message handling by adding handlers
+# for specific message types.
 class SocketClient:
 
     def __init__(self, config: ADOSConfig, *, slot_name: str, game: str, fetch_data: bool):
@@ -23,7 +32,7 @@ class SocketClient:
         self._slot_name = slot_name
         self._fetch_data = fetch_data
 
-        self._handlers: dict[type[ServerMessage], list[Callable[[Any], Awaitable[None]]]] = defaultdict(list)
+        self._handlers: dict[type[ServerMessage], list[Callable[[Any], None]]] = defaultdict(list)
 
         self._socket: Optional[ClientConnection] = None
         self._socket_task: Optional[asyncio.Task[None]] = None
@@ -42,13 +51,9 @@ class SocketClient:
         _log.info("Established socket connection to '%s' for slot '%s'", self._server_url, self._slot_name)
 
     # Allows other classes to handle incoming messages. The first argument is the type
-    # of message to handle, and the second is the async function to be called when that
-    # message is received.
-    def add_message_handler(
-        self,
-        message_type: type[ServerMessage],
-        handler: Callable[[Any], Awaitable[None]],
-    ) -> None:
+    # of message to handle, and the second is the function to be called when that message
+    # is received.
+    def add_message_handler(self, message_type: type[ServerMessage], handler: Callable[[Any], None]) -> None:
         self._handlers[message_type].append(handler)
 
     async def _initialize_connection(self, server_url: str) -> ClientConnection:
@@ -89,10 +94,10 @@ class SocketClient:
     async def _socket_loop(self) -> None:
         assert self._socket is not None
         async for socket_message in self._socket:
-            _log.warning("Received socket message for slot '%s': %s", self._slot_name, str(socket_message))
+            _log.debug("Received socket message for slot '%s': %s", self._slot_name, str(socket_message))
             for message in deserialize(socket_message):
                 await self._handle_message(message)
 
     async def _handle_message(self, message: ServerMessage) -> None:
         for handler in self._handlers.get(type(message), []):
-            await handler(message)
+            handler(message)

@@ -8,11 +8,9 @@ from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import (
     ADOSError,
-    ItemRarity,
-    ItemRarityFilter,
+    ItemCategoryFilter,
     SentItemInfo,
     SlotInfo,
-    check_rarity,
 )
 from ados.discord.common import (
     COMMAND_PREFIX,
@@ -21,7 +19,7 @@ from ados.discord.common import (
     send_success,
     send_table,
 )
-from ados.state import ADOSState
+from ados.state import GlobalState
 
 
 def _strip_quotes(value: str) -> str:
@@ -30,8 +28,8 @@ def _strip_quotes(value: str) -> str:
 
 class SlotInfoArg(commands.Converter[SlotInfo]):
     async def convert(self, ctx: BotContext, argument: str) -> SlotInfo:
-        assert isinstance(ctx.cog, Commands)
         try:
+            assert isinstance(ctx.cog, Commands)
             return ctx.cog._state.resolve_slot(_strip_quotes(argument))  # pylint: disable = protected-access
         except ADOSError as ex:
             raise UserInputError(str(ex)) from ex
@@ -44,7 +42,7 @@ class StringArg(commands.Converter[str]):
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, web: WebClient, socket: SocketClient, state: ADOSState):
+    def __init__(self, web: WebClient, socket: SocketClient, state: GlobalState):
         super().__init__()
         self._web = web
         self._socket = socket
@@ -152,19 +150,18 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     class ReplayFlags(commands.FlagConverter):
         slot: Optional[SlotInfoArg] = None
-        filter: ItemRarityFilter = ItemRarityFilter.USEFUL
-        traps: bool = False
+        filter: ItemCategoryFilter = ItemCategoryFilter.USEFUL
 
     @commands.group(name="replay", help="View previously received items for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
     async def replay(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}replay`")
 
-    @replay.command(name="recent", help="Replay items received since last call (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
-    async def replay_recent(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
+    @replay.command(name="new", help="Replay items received since last call (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
+    async def replay_new(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
         slots = await self._resolve_replay_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
         for slot in slots:
-            items = self._state.get_recent_items(ctx.author.id, slot)
+            items = self._state.get_new_items(ctx.author.id, slot)
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
@@ -177,19 +174,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
-    @commands.command(name="ketchmeup", help=f"Alias of '{COMMAND_PREFIX}replay recent'", ignore_extra=False)
+    @commands.command(name="ketchmeup", help=f"Alias of '{COMMAND_PREFIX}replay new'", ignore_extra=False)
     async def ketchmeup(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
-        await self.replay_recent(ctx, flags=flags)  # type: ignore[arg-type]
+        await self.replay_new(ctx, flags=flags)  # type: ignore[arg-type]
 
     def _filter_items(self, items: list[SentItemInfo], flags: ReplayFlags) -> list[SentItemInfo]:
-        filtered: list[SentItemInfo] = []
-        for item in items:
-            if item.rarity == ItemRarity.TRAP:
-                if flags.traps:
-                    filtered.append(item)
-            elif check_rarity(item.rarity, flags.filter):
-                filtered.append(item)
-        return filtered
+        return [item for item in items if flags.filter.check(item.category)]
 
     async def _resolve_replay_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
         if flag_slot is not None:

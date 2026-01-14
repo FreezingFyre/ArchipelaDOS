@@ -11,18 +11,34 @@ archipelago_room: null
 # if you did not include ArchipelaDOS.yaml during generation.
 archipelago_slot: ArchipelaDOS
 
+# The directory in which to store persistent bot data, so the bot can be restarted. Files in
+# this directory will be created per-room, so different rooms will not interfere with each other.
+data_path: data
+
+
+###################
+# DISCORD OPTIONS #
+###################
+
 # The Discord bot token used to authenticate with the Discord API.
 discord_token: null
 
 # The Discord server in which to operate. Currently, the bot can only operate in one server.
 discord_server: null
 
-# The Discord channel(s) in which to operate. If empty, the bot will operate in all channels.
-discord_channels: []
+# The Discord channel(s) in which to service user commands. If empty, the bot will service user
+# commands in all channels.
+discord_command_channels: []
 
-# The directory in which to store persistent bot data, so the bot can be restarted. Files in
-# this directory will be created per-room, so different rooms will not interfere with each other.
-data_path: data
+# The Discord channel(s) in which to broadcast. Each channel must also be configured with a
+# list of which types of messages to broadcast. If the list is empty, all messages will be
+# broadcast to that channel.
+#   - "progression_items": Broadcast progression item sends.
+#   - "useful_items": Broadcast useful item sends (includes progression).
+#   - "all_items": Broadcast all item sends (includes useful and progression, excludes traps).
+#   - "trap_items": Broadcast trap item sends.
+#   - "death_links": Broadcast death link messages.
+discord_broadcast_channels: {}
 
 
 #########################

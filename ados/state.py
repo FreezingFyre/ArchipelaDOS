@@ -35,14 +35,14 @@ class StateData(BaseModel):
 # The data stored in the item log file
 class ItemLogData(NamedTuple):
     slot_items: dict[int, list[SentItemInfo]] = defaultdict(list)
-    user_slot_replay_index: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    user_slot_replay_index: dict[UserSlot, int] = defaultdict(int)
 
 
 # The main ArchipelaDOS state management class. Handles information related to user state,
 # like registered slots and item subscriptions, and ensures this information is persisted
 # where necessary so that it is not lost on bot restarts. Also handles information fetched
 # from the server, such as slot details and item mappings.
-class ADOSState:
+class GlobalState:
 
     # Decorator which will persist the state after the method is called
     @staticmethod
@@ -79,7 +79,7 @@ class ADOSState:
 
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
     # will only affect aliases, so all IDs remain valid.
-    async def _handle_slot_update(self, message: ConnectedMessage | RoomUpdateMessage) -> None:
+    def _handle_slot_update(self, message: ConnectedMessage | RoomUpdateMessage) -> None:
         self._slots = {slot.id: slot for slot in message.slots}
         self._slot_ids_by_name = {slot.name.lower(): slot.id for slot in message.slots}
         self._slot_ids_by_name.update({slot.alias.lower(): slot.id for slot in message.slots})
@@ -88,7 +88,7 @@ class ADOSState:
 
     # The DataPackageMessage is sent once on startup, to populate item and location mappings
     # for each game.
-    async def _handle_data_package(self, message: DataPackageMessage) -> None:
+    def _handle_data_package(self, message: DataPackageMessage) -> None:
         for game, items in message.game_items.items():
             self._game_items[game] = {item.id: item for item in items}
         for game, locations in message.game_locations.items():
@@ -96,7 +96,7 @@ class ADOSState:
         _log.info("Populated packaged data for %d games", len(message.game_items))
 
     # Whenever an item is sent, append it to the item log both on disk and in memory
-    async def _handle_item_send(self, message: ItemSendMessage) -> None:
+    def _handle_item_send(self, message: ItemSendMessage) -> None:
         item = self.resolve_item(self._slots[message.to_slot_id].game, message.item_id)
         location = self.resolve_location(self._slots[message.from_slot_id].game, message.location_id)
 
@@ -105,9 +105,10 @@ class ADOSState:
             location_name=location.name,
             to_slot_id=message.to_slot_id,
             from_slot_id=message.from_slot_id,
-            rarity=message.rarity,
+            category=message.category,
         )
 
+        self._item_log.slot_items[message.to_slot_id].append(sent_item)
         with open(self._item_log_file, "a") as log_file:
             log_file.write(f"{json.dumps(sent_item._asdict())}\n")  # pylint: disable = protected-access
 
@@ -121,8 +122,8 @@ class ADOSState:
             for line in log_file:
                 if line.startswith(REPLAY_MARKER):
                     # This line indicates a replay occurred for the given user and slot ID
-                    user_id, slot_id = UserSlot(**json.loads(line.replace(REPLAY_MARKER, "").strip()))
-                    data.user_slot_replay_index[user_id][slot_id] = len(data.slot_items[slot_id])
+                    user_slot = UserSlot(**json.loads(line.replace(REPLAY_MARKER, "").strip()))
+                    data.user_slot_replay_index[user_slot] = len(data.slot_items[user_slot.slot_id])
                 else:
                     sent_item = SentItemInfo(**json.loads(line))
                     data.slot_items[sent_item.to_slot_id].append(sent_item)
@@ -218,12 +219,12 @@ class ADOSState:
     ################# ITEM REPLAY ##################
     ################################################
 
-    def get_recent_items(self, user_id: int, slot: SlotInfo) -> list[SentItemInfo]:
-        replay_index = self._item_log.user_slot_replay_index[user_id][slot.id]
+    def get_new_items(self, user_id: int, slot: SlotInfo) -> list[SentItemInfo]:
+        user_slot = UserSlot(user_id, slot.id)
+        replay_index = self._item_log.user_slot_replay_index[user_slot]
         recent_items = self._item_log.slot_items[slot.id][replay_index:]
-        self._item_log.user_slot_replay_index[user_id][slot.id] = len(self._item_log.slot_items[slot.id])
+        self._item_log.user_slot_replay_index[user_slot] = len(self._item_log.slot_items[slot.id])
 
-        user_slot = UserSlot(user_id=user_id, slot_id=slot.id)
         with open(self._item_log_file, "a") as log_file:
             log_file.write(f"{REPLAY_MARKER}{json.dumps(user_slot._asdict())}\n")  # pylint: disable = protected-access
         return recent_items
