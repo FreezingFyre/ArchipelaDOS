@@ -3,18 +3,26 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Callable, DefaultDict, NamedTuple, Self
+from enum import Enum
+from typing import Any, Callable, DefaultDict, NamedTuple, Optional, Self
 
 from pydantic import BaseModel
 
 from ados.arch.messages import (
     ConnectedMessage,
     DataPackageMessage,
+    ItemGroupsMessage,
     ItemSendMessage,
     RoomUpdateMessage,
 )
 from ados.arch.socket import SocketClient
-from ados.common import ADOSError, ItemInfo, LocationInfo, SentItemInfo, SlotInfo
+from ados.common import (
+    ADOSError,
+    ItemInfo,
+    LocationInfo,
+    SentItemInfo,
+    SlotInfo,
+)
 from ados.config import ADOSConfig
 
 _log = logging.getLogger(__name__)
@@ -22,14 +30,26 @@ _log = logging.getLogger(__name__)
 REPLAY_MARKER = "REPLAY: "
 
 
+class SubscriptionType(str, Enum):
+    ITEM = "item"
+    GROUP = "group"
+
+
 class UserSlot(NamedTuple):
     user_id: int
     slot_id: int
 
 
+class SlotSubscription(NamedTuple):
+    type: SubscriptionType
+    value: str
+    user_id: int
+
+
 # The data stored in the state file
 class StateData(BaseModel):
     user_slot_ids: DefaultDict[int, set[int]] = defaultdict(set)
+    slot_subscriptions: DefaultDict[int, set[SlotSubscription]] = defaultdict(set)
 
 
 # The data stored in the item log file
@@ -63,7 +83,9 @@ class GlobalState:
         self._slot_ids_by_name: dict[str, int] = {}
 
         self._game_items: dict[str, dict[int, ItemInfo]] = {}
+        self._game_item_ids_by_name: dict[str, dict[str, int]] = {}
         self._game_locations: dict[str, dict[int, LocationInfo]] = {}
+        self._game_groups: dict[str, set[str]] = {}
 
         # This is the information about slot items sends
         self._item_log = self._load_item_log()
@@ -75,6 +97,7 @@ class GlobalState:
         socket.add_message_handler(ConnectedMessage, self._handle_slot_update)
         socket.add_message_handler(RoomUpdateMessage, self._handle_slot_update)
         socket.add_message_handler(DataPackageMessage, self._handle_data_package)
+        socket.add_message_handler(ItemGroupsMessage, self._handle_item_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
 
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
@@ -91,9 +114,24 @@ class GlobalState:
     def _handle_data_package(self, message: DataPackageMessage) -> None:
         for game, items in message.game_items.items():
             self._game_items[game] = {item.id: item for item in items}
+            self._game_item_ids_by_name[game] = {item.name.lower(): item.id for item in items}
         for game, locations in message.game_locations.items():
             self._game_locations[game] = {location.id: location for location in locations}
         _log.info("Populated packaged data for %d games", len(message.game_items))
+
+    # The ItemGroupsMessage is sent once on startup, to populate item group mappings for
+    # each game.
+    def _handle_item_groups(self, message: ItemGroupsMessage) -> None:
+        self._game_groups = {game: set(groups) for game, groups in message.game_groups.items()}
+        for game, items in self._game_items.items():
+            if not game in message.game_item_groups:
+                continue
+            new_items: dict[int, ItemInfo] = {}
+            for item_id, item in items.items():
+                groups = message.game_item_groups[game].get(item.name, [])
+                new_items[item_id] = item._replace(groups=groups)  # pylint: disable = protected-access
+            items.update(new_items)
+        _log.info("Populated item groups for %d games", len(message.game_item_groups))
 
     # Whenever an item is sent, append it to the item log both on disk and in memory
     def _handle_item_send(self, message: ItemSendMessage) -> None:
@@ -163,6 +201,9 @@ class GlobalState:
     def all_slots(self) -> list[SlotInfo]:
         return list(self._slots.values())
 
+    def all_groups(self, game: str) -> set[str]:
+        return self._game_groups.get(game, set())
+
     def resolve_slot(self, value: str | int) -> SlotInfo:
         if isinstance(value, int):
             if value not in self._slots:
@@ -171,21 +212,31 @@ class GlobalState:
 
         value_lower = value.lower()
         if value_lower not in self._slot_ids_by_name:
-            raise ADOSError(f"Slot '{value}' does not exist in the multiworld")
+            raise ADOSError(f"Slot `{value}` does not exist in the multiworld")
         return self._slots[self._slot_ids_by_name[value_lower]]
 
-    def resolve_item(self, game: str, item_id: int) -> ItemInfo:
-        if game not in self._game_items:
-            raise ADOSError(f"Game '{game}' does not exist in the multiworld")
-        if item_id not in self._game_items[game]:
-            raise ADOSError(f"Item ID {item_id} does not exist in game '{game}'")
+    def resolve_group(self, game: str, group: str) -> str:
+        group_lower = group.lower()
+        for game_group in self._game_groups.get(game, set()):
+            if game_group.lower() == group_lower:
+                return game_group
+        raise ADOSError(f"Group `{group}` does not exist in game `{game}`")
+
+    def resolve_item(self, game: str, value: str | int) -> ItemInfo:
+        if isinstance(value, int):
+            if value not in self._game_items.get(game, {}):
+                raise ADOSError(f"Item ID {value} does not exist in game `{game}`")
+            return self._game_items[game][value]
+
+        value_lower = value.lower()
+        if value_lower not in self._game_item_ids_by_name.get(game, {}):
+            raise ADOSError(f"Item `{value}` does not exist in game `{game}`")
+        item_id = self._game_item_ids_by_name[game][value_lower]
         return self._game_items[game][item_id]
 
     def resolve_location(self, game: str, location_id: int) -> LocationInfo:
-        if game not in self._game_locations:
-            raise ADOSError(f"Game '{game}' does not exist in the multiworld")
-        if location_id not in self._game_locations[game]:
-            raise ADOSError(f"Location ID {location_id} does not exist in game '{game}'")
+        if location_id not in self._game_locations.get(game, {}):
+            raise ADOSError(f"Location ID {location_id} does not exist in game `{game}`")
         return self._game_locations[game][location_id]
 
     ################################################
@@ -231,3 +282,53 @@ class GlobalState:
 
     def get_all_items(self, slot: SlotInfo) -> list[SentItemInfo]:
         return self._item_log.slot_items[slot.id]
+
+    ################################################
+    ################ SUBSCRIPTIONS #################
+    ################################################
+
+    def get_subscribed_users(self, slot: SlotInfo, item: ItemInfo) -> set[int]:
+        user_ids: set[int] = set()
+        subscriptions = self._state.slot_subscriptions.get(slot.id, set())
+
+        for subscription in subscriptions:
+            if subscription.type == SubscriptionType.ITEM:
+                if item.name == subscription.value:
+                    user_ids.add(subscription.user_id)
+            elif subscription.value in item.groups:
+                user_ids.add(subscription.user_id)
+
+        return user_ids
+
+    def get_user_subscriptions(self, user_id: int, slot: Optional[SlotInfo]) -> dict[SlotInfo, set[SlotSubscription]]:
+        user_subscriptions: dict[SlotInfo, set[SlotSubscription]] = defaultdict(set)
+        to_check_slots = [slot] if slot is not None else self.get_user_slots(user_id)
+        for to_check_slot in to_check_slots:
+            subscriptions = self._state.slot_subscriptions.get(to_check_slot.id, set())
+            for subscription in subscriptions:
+                if subscription.user_id == user_id:
+                    user_subscriptions[to_check_slot].add(subscription)
+        return user_subscriptions
+
+    @persist
+    def add_user_subscription(
+        self, user_id: int, slot: SlotInfo, subscription_type: SubscriptionType, value: str
+    ) -> None:
+        subscription = SlotSubscription(subscription_type, value, user_id)
+        if subscription in self._state.slot_subscriptions.get(slot.id, set()):
+            raise ADOSError(f"User is already subscribed to {subscription_type.value} `{value}` in slot `{slot}`")
+        self._state.slot_subscriptions[slot.id].add(subscription)
+
+    @persist
+    def remove_user_subscription(self, user_id: int, slot: Optional[SlotInfo], value: str) -> None:
+        value_lower = value.lower()
+        to_check_slots = [slot] if slot is not None else self.get_user_slots(user_id)
+        for to_check_slot in to_check_slots:
+            subscriptions = self._state.slot_subscriptions.get(to_check_slot.id, set())
+            if not subscriptions:
+                continue
+            self._state.slot_subscriptions[to_check_slot.id] = {
+                subscription
+                for subscription in subscriptions
+                if not (subscription.user_id == user_id and value_lower in subscription.value.lower())
+            }

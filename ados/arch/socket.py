@@ -14,6 +14,7 @@ from ados.arch.messages import (
     connect_message,
     deserialize,
     get_data_package_message,
+    get_item_groups_message,
 )
 from ados.common import ADOSError
 from ados.config import ADOSConfig
@@ -69,9 +70,10 @@ class SocketClient:
             raise ADOSError("Received invalid room info message from websocket server")
         await self._handle_message(server_msgs[0])
 
+        games = server_msgs[0].games.copy()
         if self._fetch_data:
             _log.info("Requesting data package from server at '%s' for slot '%s'", server_url, self._slot_name)
-            await socket.send(get_data_package_message(server_msgs[0].games))
+            await socket.send(get_data_package_message(games))
 
             server_msgs = list(deserialize(await socket.recv()))
             if len(server_msgs) != 1 or not isinstance(server_msgs[0], DataPackageMessage):
@@ -89,12 +91,15 @@ class SocketClient:
 
         _log.info("Successfully connected to websocket server for slot '%s'", self._slot_name)
         await self._handle_message(server_msgs[0])
+
+        if self._fetch_data:
+            await socket.send(get_item_groups_message(games))
+
         return socket
 
     async def _socket_loop(self) -> None:
         assert self._socket is not None
         async for socket_message in self._socket:
-            _log.debug("Received socket message for slot '%s': %s", self._slot_name, str(socket_message))
             for message in deserialize(socket_message):
                 await self._handle_message(message)
 

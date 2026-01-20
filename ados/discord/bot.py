@@ -49,7 +49,7 @@ class ADOSBot(commands.Bot):
         self._web = WebClient(config)
         self._socket = SocketClient(config, slot_name=config.archipelago_slot, game="Archipelago", fetch_data=True)
         self._state = GlobalState(config, self._socket)
-        self._broadcaster = MessageBroadcaster(config, self._socket, self._state)
+        self._broadcaster = MessageBroadcaster(config, self._socket, self._state, self)
 
         self._cleanup_task: Optional[asyncio.Task[None]] = None
 

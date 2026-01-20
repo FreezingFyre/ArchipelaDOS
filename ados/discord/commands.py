@@ -11,6 +11,7 @@ from ados.common import (
     ItemCategoryFilter,
     SentItemInfo,
     SlotInfo,
+    join_objects,
 )
 from ados.discord.common import (
     COMMAND_PREFIX,
@@ -19,14 +20,14 @@ from ados.discord.common import (
     send_success,
     send_table,
 )
-from ados.state import GlobalState
+from ados.state import GlobalState, SubscriptionType
 
 
 def _strip_quotes(value: str) -> str:
     return value.strip("'\"")
 
 
-class SlotInfoArg(commands.Converter[SlotInfo]):
+class SlotInfoArg(commands.Converter[SlotInfo], SlotInfo):
     async def convert(self, ctx: BotContext, argument: str) -> SlotInfo:
         try:
             assert isinstance(ctx.cog, Commands)
@@ -35,9 +36,12 @@ class SlotInfoArg(commands.Converter[SlotInfo]):
             raise UserInputError(str(ex)) from ex
 
 
-class StringArg(commands.Converter[str]):
+class StringArg(commands.Converter[str], str):
     async def convert(self, ctx: BotContext, argument: str) -> str:  # pylint: disable = unused-argument
-        return _strip_quotes(argument)
+        argument = _strip_quotes(argument)
+        if not argument:
+            raise UserInputError("Argument cannot be empty")
+        return argument
 
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
@@ -94,19 +98,39 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         await self._socket.connect(self._web.server_url)
         await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
 
-    @commands.command(name="info", help="Get information about the Archipelago room", ignore_extra=False)
+    ################################################
+    ############# INFORMATION COMMANDS #############
+    ################################################
+
+    class InfoFlags(commands.FlagConverter):
+        slot: SlotInfoArg = commands.flag(positional=True)
+
+    @commands.group(name="info", help="Retrieve room/slot information", invoke_without_command=True)  # type: ignore[arg-type]
     async def info(self, ctx: BotContext) -> None:
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}info`")
+
+    @info.command(name="room", help="Get information about the Archipelago room", ignore_extra=False)  # type: ignore[arg-type]
+    async def info_room(self, ctx: BotContext) -> None:
         port = self._web.server_url.split(":")[-1]
-        slot_names = [f"`{slot}`" for slot in self._state.all_slots()]
-        slot_list = ", ".join(slot_name for slot_name in slot_names)
-        message = (
-            f"Room Information:\n"
-            f"- Port: {port}\n"
-            f"- Room URL: <{self._web.room_url}>\n"
-            f"- Tracker URL: <{self._web.tracker_url}>\n"
-            f"- Available Slots: {slot_list}"
-        )
-        await send_message(ctx, message)
+        slot_names_joined = join_objects(self._state.all_slots())
+        message = [
+            "Room information:",
+            f"- Port: {port}",
+            f"- Room URL: <{self._web.room_url}>",
+            f"- Tracker URL: <{self._web.tracker_url}>",
+            f"- Available slots: {slot_names_joined}",
+        ]
+        await send_message(ctx, "\n".join(message))
+
+    @info.command(name="slot", help="Get information about a specific slot", ignore_extra=False)  # type: ignore[arg-type]
+    async def info_slot(self, ctx: BotContext, *, flags: InfoFlags) -> None:
+        groups_joined = join_objects(self._state.all_groups(flags.slot.game))
+        message = [
+            f"Slot information for `{flags.slot}`:",
+            f"- Game: `{flags.slot.game}`",
+            f"- Item groups: {groups_joined}",
+        ]
+        await send_message(ctx, "\n".join(message))
 
     ################################################
     ########### SLOT MANAGEMENT COMMANDS ###########
@@ -135,11 +159,10 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if not slots:
             await send_message(ctx, "You are not registered for any slots")
         else:
-            slot_names = [str(slot) for slot in slots]
-            slot_list = ", ".join(f"`{slot_name}`" for slot_name in sorted(slot_names))
-            await send_message(ctx, f"You are registered for the following slots: {slot_list}")
+            slot_names_joined = join_objects(slots)
+            await send_message(ctx, f"You are registered for the following slots: {slot_names_joined}")
 
-    @slot.command(name="clear", help="Unregisters you from all slots", ignore_extra=False)  # type: ignore[arg-type]
+    @slot.command(name="clear", help="Clears your registration for all slots", ignore_extra=False)  # type: ignore[arg-type]
     async def slot_clear(self, ctx: BotContext) -> None:
         self._state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
@@ -149,8 +172,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     ################################################
 
     class ReplayFlags(commands.FlagConverter):
+        filter: ItemCategoryFilter = commands.flag(positional=True, default=ItemCategoryFilter.USEFUL)
         slot: Optional[SlotInfoArg] = None
-        filter: ItemCategoryFilter = ItemCategoryFilter.USEFUL
 
     @commands.group(name="replay", help="View previously received items for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
     async def replay(self, ctx: BotContext) -> None:
@@ -209,11 +232,11 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     ################ HINT COMMANDS #################
     ################################################
 
-    class HintFlagsItem(commands.FlagConverter):
-        item: StringArg = commands.flag(positional=True)
+    class HintFlags(commands.FlagConverter):
         slot: Optional[SlotInfoArg] = None
 
-    class HintFlagsNoItem(commands.FlagConverter):
+    class HintFlagsItem(commands.FlagConverter):
+        item: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
 
     @commands.group(name="hint", help="View and use hints for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
@@ -221,51 +244,89 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}hint`")
 
     @hint.command(name="points", help="Show hint points (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_points(self, ctx: BotContext, *, flags: HintFlagsNoItem) -> None:
+    async def hint_points(self, ctx: BotContext, *, flags: HintFlags) -> None:
         raise ADOSError("Not yet implemented")  # TODO: Implement
 
     @hint.command(name="use", help="Use a hint for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def hint_use(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
         raise ADOSError("Not yet implemented")  # TODO: Implement
 
-    @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_list(self, ctx: BotContext, *, flags: HintFlagsNoItem) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
-
-    @hint.command(name="listall", help="List all hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_listall(self, ctx: BotContext, *, flags: HintFlagsNoItem) -> None:
+    @hint.command(name="list", help="List hints (can filter by slot/found status)", ignore_extra=False)  # type: ignore[arg-type]
+    async def hint_list(self, ctx: BotContext, *, flags: HintFlags) -> None:
         raise ADOSError("Not yet implemented")  # TODO: Implement
 
     ################################################
     ############ SUBSCRIPTION COMMANDS #############
     ################################################
 
+    class SubscribeFlags(commands.FlagConverter):
+        slot: Optional[SlotInfoArg] = None
+
     class SubscribeFlagsItem(commands.FlagConverter):
         item: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
 
-    class SubscribeFlagsNoItem(commands.FlagConverter):
+    class SubscribeFlagsGroup(commands.FlagConverter):
+        group: StringArg = commands.flag(positional=True)
+        slot: Optional[SlotInfoArg] = None
+
+    class SubscribeFlagsValue(commands.FlagConverter):
+        value: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
 
     @commands.group(name="subscribe", help="Manage item subscriptions, which will notify you on item send", invoke_without_command=True)  # type: ignore[arg-type]
     async def subscribe(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}subscribe`")
 
-    @subscribe.command(name="add", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
-    async def subscribe_add(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
+    @subscribe.command(name="item", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
+    async def subscribe_item(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
+        slot = self._resolve_subscribe_slot(ctx, flags.slot)
+        item = self._state.resolve_item(slot.game, flags.item)
+        self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.ITEM, item.name)
+        await send_success(ctx, f"You have subscribed to item `{item.name}` in slot `{slot}`")
 
-    @subscribe.command(name="remove", help="Unsubscribes you from the given item (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
+    @subscribe.command(name="group", help="Subscribes you for the given item group (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
+    async def subscribe_group(self, ctx: BotContext, *, flags: SubscribeFlagsGroup) -> None:
+        slot = self._resolve_subscribe_slot(ctx, flags.slot)
+        group = self._state.resolve_group(slot.game, flags.group)
+        self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
+        await send_success(ctx, f"You have subscribed to item group `{group}` in slot `{slot}`")
 
-    @subscribe.command(name="list", help="Lists your active item subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def subscribe_list(self, ctx: BotContext, *, flags: SubscribeFlagsNoItem) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
+    @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsValue) -> None:
+        self._state.remove_user_subscription(ctx.author.id, flags.slot, flags.value)
+        await send_success(ctx, f"You have removed items/group subscriptions matching `{flags.value}`")
 
-    @subscribe.command(name="clear", help="Unsubscribes you from all items (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlagsNoItem) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
+    @subscribe.command(name="list", help="Lists your active item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    async def subscribe_list(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
+        slot_subscriptions = self._state.get_user_subscriptions(ctx.author.id, flags.slot)
+        if not slot_subscriptions:
+            await send_message(ctx, "You have no active item/group subscriptions")
+        else:
+            table: dict[str, list[str]] = {"Slot": [], "Type": [], "Value": []}
+            for slot, subscriptions in slot_subscriptions.items():
+                for subscription in subscriptions:
+                    table["Slot"].append(str(slot))
+                    table["Type"].append(subscription.type.value)
+                    table["Pattern"].append(subscription.value)
+            await send_table(ctx, table)
+
+    @subscribe.command(name="clear", help="Clears all your subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
+        self._state.remove_user_subscription(ctx.author.id, flags.slot, "")
+        await send_success(ctx, "You have cleared your item/group subscriptions")
+
+    def _resolve_subscribe_slot(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> SlotInfo:
+        if flag_slot is not None:
+            assert isinstance(flag_slot, SlotInfo)
+            return flag_slot
+
+        slots = self._state.get_user_slots(ctx.author.id)
+        if len(slots) == 0:
+            raise ADOSError("You are not registered for any slots; either register or specify a slot")
+        if len(slots) > 1:
+            raise ADOSError("You are registered for multiple slots; please specify a slot")
+        return slots[0]
 
     ################################################
     ################ STATS COMMANDS ################

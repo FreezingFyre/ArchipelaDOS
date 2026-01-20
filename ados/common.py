@@ -1,10 +1,16 @@
 from enum import Enum
-from typing import NamedTuple
+from typing import Any, Iterable, NamedTuple
 
 
 # Thrown to send a particular error message to the user through Discord.
 class ADOSError(Exception):
     pass
+
+
+# Joins a list of stringable types with commas, marking the objects with backticks.
+def join_objects(objects: Iterable[Any]) -> str:
+    object_names = [f"`{obj}`" for obj in objects]
+    return ", ".join(sorted(object_names))
 
 
 # Defined item categories for use in commands and messages. These can technically
@@ -58,6 +64,7 @@ class ItemInfo(NamedTuple):
     id: int
     name: str
     game: str
+    groups: list[str] = []
 
     def __str__(self) -> str:
         return self.name

@@ -18,6 +18,7 @@ _log = logging.getLogger(__name__)
 class BroadcastItem(NamedTuple):
     channel_names: list[str]
     content: str
+    mention_user_ids: set[int] = set()
 
 
 # Configuration for which types of broadcasts to send to a particular channel.
@@ -49,9 +50,10 @@ class BroadcastConfig:
 # Discord channels, as specified by the configuration.
 class MessageBroadcaster:
 
-    def __init__(self, config: ADOSConfig, socket: SocketClient, state: GlobalState):
+    def __init__(self, config: ADOSConfig, socket: SocketClient, state: GlobalState, client: discord.Client):
         self._socket = socket
         self._state = state
+        self._client = client
 
         self._channel_configs = {
             channel_name: BroadcastConfig(categories)
@@ -94,11 +96,21 @@ class MessageBroadcaster:
     async def _broadcast_loop(self) -> None:
         while True:
             item = await self._broadcast_queue.get()
+            content = item.content
+
+            mentions: list[str] = []
+            for user_id in item.mention_user_ids:
+                user = await self._client.get_or_fetch(discord.User, user_id)
+                if user is not None:
+                    mentions.append(user.mention)
+            if mentions:
+                content += "\n" + " ".join(mentions)
+
             for channel_name in item.channel_names:
                 channel = self._channels.get(channel_name)
                 if not channel:
                     continue
-                await channel.send(item.content)
+                await channel.send(content)
 
     def _handle_item_send(self, message: ItemSendMessage) -> None:
         channel_names: list[str] = []
@@ -135,7 +147,8 @@ class MessageBroadcaster:
                 content = f"`{from_slot}` sent {highlight(item)} to {to_slot}"
         content += f"  —  from check `{location}`"
 
-        self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
+        mention_user_ids = self._state.get_subscribed_users(to_slot, item)
+        self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content, mention_user_ids))
 
     def _handle_death_link(self, message: DeathLinkMessage) -> None:
         channel_names = [

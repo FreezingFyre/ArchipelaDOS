@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import defaultdict
 from typing import Any, Iterator
 
 from websockets.typing import Data
@@ -54,6 +55,18 @@ def get_data_package_message(games: list[str]) -> str:
     )
 
 
+# Sent to the server to request item groups for games in the multiworld
+def get_item_groups_message(games: list[str]) -> str:
+    return json.dumps(
+        [
+            {
+                "cmd": "Get",
+                "keys": [f"_read_item_name_groups_{game}" for game in games],
+            }
+        ]
+    )
+
+
 ################################################
 ############### SERVER MESSAGES ################
 ################################################
@@ -96,6 +109,22 @@ class RoomUpdateMessage:
         self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
+# Sent by the server when returning information about item groups for its games
+class ItemGroupsMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.game_groups: dict[str, list[str]] = defaultdict(list)
+        self.game_item_groups: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        for game_key, groups in data["keys"].items():
+            game = game_key.replace("_read_item_name_groups_", "")
+            for group, item_names in groups.items():
+                if len(item_names) < 2:
+                    # No sense bothering with single-item groups
+                    continue
+                self.game_groups[game].append(group)
+                for item_name in item_names:
+                    self.game_item_groups[game][item_name].append(group)
+
+
 # Sent by the server when one slot sends an item to another slot
 class ItemSendMessage:
     def __init__(self, data: dict[str, Any]) -> None:
@@ -126,6 +155,7 @@ type ServerMessage = (
     | ConnectedMessage
     | ConnectionRefusedMessage
     | RoomUpdateMessage
+    | ItemGroupsMessage
     | ItemSendMessage
     | DeathLinkMessage
 )
@@ -149,6 +179,8 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ConnectionRefusedMessage(data)
             elif cmd == "RoomUpdate" and "players" in data:
                 yield RoomUpdateMessage(data)
+            elif cmd == "Retrieved" and all("_read_item_name_groups_" in key for key in data["keys"]):
+                yield ItemGroupsMessage(data)
             elif cmd == "PrintJSON" and data.get("type") == "ItemSend":
                 yield ItemSendMessage(data)
             elif cmd == "Bounced" and "DeathLink" in data.get("tags", []):
