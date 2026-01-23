@@ -38,6 +38,10 @@ class BroadcastCategory(str, Enum):
     ALL_ITEMS = "all_items"
     TRAP_ITEMS = "trap_items"
     DEATH_LINKS = "death_links"
+    JOIN_LEAVE = "join_leave"
+    PLAYER_CHAT = "player_chat"
+    SERVER_CHAT = "server_chat"
+    GOAL_REACHED = "goal_reached"
 
 
 # The main configuration class for ArchipelaDOS. Loaded from a YAML file on startup with strict
@@ -46,7 +50,9 @@ class ADOSConfig(BaseModel):
 
     archipelago_room: str
     archipelago_slot: str
+    archipelago_game: str
     data_path: Annotated[str, BeforeValidator(_expand_path)]
+    death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
     discord_token: str = Field(..., exclude=True, repr=False)

@@ -63,7 +63,7 @@ def initialize_logging(config: ADOSConfig) -> None:
     else:
         os.makedirs(os.path.dirname(config.logging_path), exist_ok=True)
         file_path = config.logging_path
-    mode = "a" if config.logging_behavior == LoggingBehavior.FILE_APPEND else "w"
+    mode = "w" if config.logging_behavior == LoggingBehavior.FILE_OVERWRITE else "a"
 
     file_handler = logging.FileHandler(file_path, mode=mode)
     file_handler.setFormatter(BasicFormatter())

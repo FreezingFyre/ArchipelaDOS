@@ -13,6 +13,7 @@ from discord.ext.commands.errors import (
     UserInputError,
 )
 
+from ados.arch.messages import ConnectionClosedMessage
 from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import ADOSError
@@ -42,12 +43,13 @@ class ADOSBot(commands.Bot):
         super().__init__(command_prefix=COMMAND_PREFIX, intents=intents, help_command=help_command)
 
         # Guild and channel IDs start unset, and are populated in on_ready()
+        self._connected = False
         self._config = config
         self._guild: Optional[discord.Guild] = None
         self._command_channel_ids: set[int] = set()
 
         self._web = WebClient(config)
-        self._socket = SocketClient(config, slot_name=config.archipelago_slot, game="Archipelago", fetch_data=True)
+        self._socket = SocketClient(config, slot_name=config.archipelago_slot, game=config.archipelago_game)
         self._state = GlobalState(config, self._socket)
         self._broadcaster = MessageBroadcaster(config, self._socket, self._state, self)
 
@@ -56,16 +58,19 @@ class ADOSBot(commands.Bot):
         bot_commands = Commands(self._web, self._socket, self._state)
         self.add_cog(bot_commands)
 
+        self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)
+
     async def execute(self) -> None:
         _log.info("Starting ArchipelaDOS bot with configuration: %s", self._config.model_dump_json())
         await self._web.refresh()
-        await self._socket.connect(self._web.server_url)
+        await self._socket.connect(self._web.server_url, fetch_data=True)
         await super().start(self._config.discord_token)
         _log.info("Stopping ArchipelaDOS bot")
 
     async def on_ready(self) -> None:
         _log.info("Connected to Discord with ID: %d", self.application_id)
 
+        self._connected = True
         self._guild = None
         self._command_channel_ids.clear()
 
@@ -95,13 +100,14 @@ class ADOSBot(commands.Bot):
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def on_disconnect(self) -> None:
-        _log.error("Disconnected from Discord, reconnect will be attempted automatically")
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            self._cleanup_task = None
+        _log.warning("Disconnected from Discord, reconnect will be attempted automatically")
+        self._connected = False
         self._broadcaster.stop()
-        self._guild = None
-        self._command_channel_ids.clear()
+
+    async def on_resumed(self) -> None:
+        assert self._guild is not None
+        _log.info("Reconnected to Discord with ID: %d", self.application_id)
+        self._broadcaster.start(self._guild)
 
     async def on_message(self, message: discord.Message) -> None:
 
@@ -142,7 +148,7 @@ class ADOSBot(commands.Bot):
     async def _cleanup_loop(self) -> None:
 
         async def _cleanup_job() -> None:
-            if not self._guild:
+            if not self._guild or not self._connected:
                 return
 
             archived_count = 0
@@ -160,7 +166,7 @@ class ADOSBot(commands.Bot):
                     archived_count += 1
                     await thread.edit(archived=True)
 
-            _log.debug(
+            (_log.debug if archived_count == 0 else _log.info)(
                 "Archived %d inactive threads out of %d bot threads; checked %d total threads",
                 archived_count,
                 bot_thread_count,
@@ -170,7 +176,31 @@ class ADOSBot(commands.Bot):
         # Use asyncio.gather to run the cleanup job and the sleep concurrently, so whichever
         # takes longer determines the interval.
         while True:
-            await asyncio.gather(
-                _cleanup_job(),
-                asyncio.sleep(CLEANUP_INTERVAL.total_seconds()),
-            )
+            try:
+                await asyncio.gather(
+                    _cleanup_job(),
+                    asyncio.sleep(CLEANUP_INTERVAL.total_seconds()),
+                )
+            except Exception as ex:
+                _log.error("Error during thread cleanup: %s", str(ex))
+
+    # If the socket disconnects, we want to refresh the room and attempt a reconnect before
+    # erroring out.
+    def _on_socket_disconnected(self, _: ConnectionClosedMessage) -> None:
+
+        async def _reconnect_task() -> None:
+            _log.warning("Socket disconnected; attempting to refresh room and reconnect")
+            try:
+                await self._web.refresh()
+                await self._socket.connect(self._web.server_url, fetch_data=False)
+                _log.info("Socket successfully reconnected after disconnect")
+            except Exception as ex:
+                _log.error("Failed to reconnect socket after disconnect: %s", ex)
+                assert self._guild is not None
+                for channel in self._guild.text_channels:
+                    if channel.name in self._config.discord_broadcast_channels:
+                        await channel.send(
+                            f":red_circle:  *Lost connection to Archipelago server. Use {COMMAND_PREFIX}refresh to attempt a reconnect.*"
+                        )
+
+        asyncio.create_task(_reconnect_task())

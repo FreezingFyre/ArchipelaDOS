@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from ados.arch.messages import (
     ConnectedMessage,
     DataPackageMessage,
+    DeathLinkMessage,
     ItemGroupsMessage,
     ItemSendMessage,
     RoomUpdateMessage,
@@ -50,6 +51,7 @@ class SlotSubscription(NamedTuple):
 class StateData(BaseModel):
     user_slot_ids: DefaultDict[int, set[int]] = defaultdict(set)
     slot_subscriptions: DefaultDict[int, set[SlotSubscription]] = defaultdict(set)
+    slot_deaths: DefaultDict[int, int] = defaultdict(int)
 
 
 # The data stored in the item log file
@@ -99,6 +101,7 @@ class GlobalState:
         socket.add_message_handler(DataPackageMessage, self._handle_data_package)
         socket.add_message_handler(ItemGroupsMessage, self._handle_item_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
+        socket.add_message_handler(DeathLinkMessage, self._handle_death_link)
 
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
     # will only affect aliases, so all IDs remain valid.
@@ -149,6 +152,11 @@ class GlobalState:
         self._item_log.slot_items[message.to_slot_id].append(sent_item)
         with open(self._item_log_file, "a") as log_file:
             log_file.write(f"{json.dumps(sent_item._asdict())}\n")  # pylint: disable = protected-access
+
+    @persist
+    def _handle_death_link(self, message: DeathLinkMessage) -> None:
+        slot = self.resolve_slot(message.slot_name)
+        self._state.slot_deaths[slot.id] += 1
 
     def _load_item_log(self) -> ItemLogData:
         data = ItemLogData()
@@ -238,6 +246,9 @@ class GlobalState:
         if location_id not in self._game_locations.get(game, {}):
             raise ADOSError(f"Location ID {location_id} does not exist in game `{game}`")
         return self._game_locations[game][location_id]
+
+    def death_counts(self) -> dict[SlotInfo, int]:
+        return {self._slots[slot_id]: count for slot_id, count in self._state.slot_deaths.items()}
 
     ################################################
     ############## SLOT REGISTRATIONS ##############

@@ -31,11 +31,15 @@ async def send_failure(ctx: BotContext, message: str, *, reply: bool = False) ->
 
 # Sends a table in a monospaced code block. Paginates if necessary to fit within
 # Discord's message limits.
-async def send_table(ctx: BotContext, table: dict[str, list[str]], *, reply: bool = False) -> None:
+async def send_table(
+    ctx: BotContext, table: dict[str, list[str]], *, reply: bool = False, right_just: bool = False
+) -> None:
     num_rows = len(next(iter(table.values())))
     assert all(len(column) == num_rows for column in table.values())
 
     column_widths = [max(len(entry) for entry in [header] + column) for header, column in table.items()]
+    just_funcs = [str.rjust if right_just else str.ljust for _ in table.keys()]
+    just_funcs[0] = str.ljust  # Always left-justify the first column
 
     lines: list[str] = []
     lines.append(" | ".join(header.ljust(width) for header, width in zip(table.keys(), column_widths)) + "\n")
@@ -43,7 +47,11 @@ async def send_table(ctx: BotContext, table: dict[str, list[str]], *, reply: boo
 
     for row_idx in range(num_rows):
         lines.append(
-            " | ".join(column[row_idx].ljust(width) for column, width in zip(table.values(), column_widths)) + "\n"
+            " | ".join(
+                just_func(column[row_idx], width)
+                for column, width, just_func in zip(table.values(), column_widths, just_funcs)
+            )
+            + "\n"
         )
 
     max_line_length = max(len(line) for line in lines)

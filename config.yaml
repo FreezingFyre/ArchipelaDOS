@@ -11,9 +11,18 @@ archipelago_room: null
 # if you did not include ArchipelaDOS.yaml during generation.
 archipelago_slot: ArchipelaDOS
 
+# The Archipelago game to use when connecting. Change this to be the game corresponding to the
+# archipelago_slot if you did not include ArchipelaDOS.yaml during generation.
+archipelago_game: Archipelago
+
 # The directory in which to store persistent bot data, so the bot can be restarted. Files in
 # this directory will be created per-room, so different rooms will not interfere with each other.
 data_path: data
+
+# The file containing custom death link messages, if desired. This file should be formatted
+# with one message per line, where each line includes a {player} token that will be replaced
+# with the name of the player who died.
+death_link_messages_path: null
 
 
 ###################
@@ -38,6 +47,10 @@ discord_command_channels: []
 #   - "all_items": Broadcast all item sends (includes useful and progression, excludes traps).
 #   - "trap_items": Broadcast trap item sends.
 #   - "death_links": Broadcast death link messages.
+#   - "join_leave": Broadcast player join and leave messages.
+#   - "player_chat": Broadcast when a player sends a chat message.
+#   - "server_chat": Broadcast when the server sends a global chat message.
+#   - "goal_reached": Broadcast when a player reaches their goal.
 discord_broadcast_channels: {}
 
 

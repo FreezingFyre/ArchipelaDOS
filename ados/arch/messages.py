@@ -1,6 +1,7 @@
 import json
 import logging
 from collections import defaultdict
+from enum import Enum
 from typing import Any, Iterator
 
 from websockets.typing import Data
@@ -9,8 +10,13 @@ from ados.common import ItemCategory, ItemInfo, LocationInfo, SlotInfo
 
 _log = logging.getLogger(__name__)
 
-ARCH_VERSION = "0.6.5"
+ARCH_VERSION = "0.6.6"
 ARCH_MAJOR, ARCH_MINOR, ARCH_BUILD = [int(part) for part in ARCH_VERSION.split(".")]
+
+
+class JoinLeaveType(str, Enum):
+    JOIN = "join"
+    LEAVE = "leave"
 
 
 def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotInfo:
@@ -103,6 +109,11 @@ class ConnectionRefusedMessage:
         self.errors: list[str] = data.get("errors", [])
 
 
+# Sent internally by the websocket client when the connection to Archipelago is closed
+class ConnectionClosedMessage:
+    pass
+
+
 # Sent by the server when the room information is updated -- particularly slot aliases
 class RoomUpdateMessage:
     def __init__(self, data: dict[str, Any]) -> None:
@@ -149,15 +160,46 @@ class DeathLinkMessage:
         self.slot_name: str = data["data"]["source"]
 
 
+# Sent by the server when a slot connects or disconnects
+class JoinLeaveMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.slot_id: int = data["slot"]
+        self.join_or_leave: JoinLeaveType = JoinLeaveType.JOIN if data["type"] == "Join" else JoinLeaveType.LEAVE
+
+
+# Sent by the server when a player sends a chat message
+class PlayerChatMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.slot_id: int = data["slot"]
+        self.message: str = data["message"]
+
+
+# Sent by the server when the server sends a global chat message
+class ServerChatMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.message: str = data["message"]
+
+
+# Sent by the server when a player reaches their goal
+class GoalReachedMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.slot_id: int = data["slot"]
+
+
 type ServerMessage = (
     RoomInfoMessage
     | DataPackageMessage
     | ConnectedMessage
     | ConnectionRefusedMessage
+    | ConnectionClosedMessage
     | RoomUpdateMessage
     | ItemGroupsMessage
     | ItemSendMessage
     | DeathLinkMessage
+    | JoinLeaveMessage
+    | PlayerChatMessage
+    | ServerChatMessage
+    | GoalReachedMessage
 )
 
 
@@ -185,6 +227,18 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ItemSendMessage(data)
             elif cmd == "Bounced" and "DeathLink" in data.get("tags", []):
                 yield DeathLinkMessage(data)
+            elif (
+                cmd == "PrintJSON"
+                and data.get("type") in {"Join", "Part"}
+                and " tracking " not in data.get("data", [{}])[0].get("text", "")
+            ):
+                yield JoinLeaveMessage(data)
+            elif cmd == "PrintJSON" and data.get("type") == "Chat":
+                yield PlayerChatMessage(data)
+            elif cmd == "PrintJSON" and data.get("type") == "ServerChat":
+                yield ServerChatMessage(data)
+            elif cmd == "PrintJSON" and data.get("type") == "Goal":
+                yield GoalReachedMessage(data)
 
         except Exception as ex:
             _log.error("Failed to deserialize server message: %s - %s", ex, data)

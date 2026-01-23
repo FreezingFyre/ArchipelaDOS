@@ -1,6 +1,10 @@
+import io
 import random
-from typing import Literal, Optional
+from enum import Enum
+from typing import Optional, cast
 
+import discord
+import matplotlib.pyplot as plt
 from discord.ext import commands
 from discord.ext.commands.errors import UserInputError
 
@@ -27,7 +31,13 @@ def _strip_quotes(value: str) -> str:
     return value.strip("'\"")
 
 
-class SlotInfoArg(commands.Converter[SlotInfo], SlotInfo):
+class StatsOutputMode(str, Enum):
+    LIST = "list"
+    TABLE = "table"
+    GRAPH = "graph"
+
+
+class SlotInfoArg(commands.Converter[SlotInfo]):
     async def convert(self, ctx: BotContext, argument: str) -> SlotInfo:
         try:
             assert isinstance(ctx.cog, Commands)
@@ -36,7 +46,7 @@ class SlotInfoArg(commands.Converter[SlotInfo], SlotInfo):
             raise UserInputError(str(ex)) from ex
 
 
-class StringArg(commands.Converter[str], str):
+class StringArg(commands.Converter[str]):
     async def convert(self, ctx: BotContext, argument: str) -> str:  # pylint: disable = unused-argument
         argument = _strip_quotes(argument)
         if not argument:
@@ -95,22 +105,11 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @commands.command(name="refresh", help="Refresh the room on archipelago.gg", ignore_extra=False)
     async def refresh(self, ctx: BotContext) -> None:
         await self._web.refresh()
-        await self._socket.connect(self._web.server_url)
+        await self._socket.connect(self._web.server_url, fetch_data=False)
         await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
 
-    ################################################
-    ############# INFORMATION COMMANDS #############
-    ################################################
-
-    class InfoFlags(commands.FlagConverter):
-        slot: SlotInfoArg = commands.flag(positional=True)
-
-    @commands.group(name="info", help="Retrieve room/slot information", invoke_without_command=True)  # type: ignore[arg-type]
+    @commands.command(name="info", help="Get information about the Archipelago room", ignore_extra=False)
     async def info(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}info`")
-
-    @info.command(name="room", help="Get information about the Archipelago room", ignore_extra=False)  # type: ignore[arg-type]
-    async def info_room(self, ctx: BotContext) -> None:
         port = self._web.server_url.split(":")[-1]
         slot_names_joined = join_objects(self._state.all_slots())
         message = [
@@ -119,16 +118,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             f"- Room URL: <{self._web.room_url}>",
             f"- Tracker URL: <{self._web.tracker_url}>",
             f"- Available slots: {slot_names_joined}",
-        ]
-        await send_message(ctx, "\n".join(message))
-
-    @info.command(name="slot", help="Get information about a specific slot", ignore_extra=False)  # type: ignore[arg-type]
-    async def info_slot(self, ctx: BotContext, *, flags: InfoFlags) -> None:
-        groups_joined = join_objects(self._state.all_groups(flags.slot.game))
-        message = [
-            f"Slot information for `{flags.slot}`:",
-            f"- Game: `{flags.slot.game}`",
-            f"- Item groups: {groups_joined}",
         ]
         await send_message(ctx, "\n".join(message))
 
@@ -167,6 +156,17 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         self._state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
 
+    @slot.command(name="info", help="Get information about a specific slot", ignore_extra=False)  # type: ignore[arg-type]
+    async def slot_info(self, ctx: BotContext, *, flags: SlotFlags) -> None:
+        game = cast(SlotInfo, flags.slot).game
+        groups_joined = join_objects(self._state.all_groups(game))
+        message = [
+            f"Slot information for `{flags.slot}`:",
+            f"- Game: `{game}`",
+            f"- Item groups: {groups_joined}",
+        ]
+        await send_message(ctx, "\n".join(message))
+
     ################################################
     ######### NOTIFICATION REPLAY COMMANDS #########
     ################################################
@@ -188,8 +188,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
-    @replay.command(name="all", help="Replay all items recieved since game start (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
-    async def replay_all(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
+    @replay.command(name="full", help="Replay all items recieved since game start (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
+    async def replay_full(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
         slots = await self._resolve_replay_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
         for slot in slots:
@@ -281,14 +281,14 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @subscribe.command(name="item", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_item(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
         slot = self._resolve_subscribe_slot(ctx, flags.slot)
-        item = self._state.resolve_item(slot.game, flags.item)
+        item = self._state.resolve_item(slot.game, cast(str, flags.item))
         self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.ITEM, item.name)
         await send_success(ctx, f"You have subscribed to item `{item.name}` in slot `{slot}`")
 
     @subscribe.command(name="group", help="Subscribes you for the given item group (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_group(self, ctx: BotContext, *, flags: SubscribeFlagsGroup) -> None:
         slot = self._resolve_subscribe_slot(ctx, flags.slot)
-        group = self._state.resolve_group(slot.game, flags.group)
+        group = self._state.resolve_group(slot.game, cast(str, flags.group))
         self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
         await send_success(ctx, f"You have subscribed to item group `{group}` in slot `{slot}`")
 
@@ -299,16 +299,16 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="list", help="Lists your active item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_list(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
-        slot_subscriptions = self._state.get_user_subscriptions(ctx.author.id, flags.slot)
+        slot_subscriptions = self._state.get_user_subscriptions(ctx.author.id, cast(Optional[SlotInfo], flags.slot))
         if not slot_subscriptions:
             await send_message(ctx, "You have no active item/group subscriptions")
         else:
             table: dict[str, list[str]] = {"Slot": [], "Type": [], "Value": []}
-            for slot, subscriptions in slot_subscriptions.items():
+            for slot, subscriptions in sorted(slot_subscriptions.items(), key=lambda pair: pair[0].name):
                 for subscription in subscriptions:
                     table["Slot"].append(str(slot))
                     table["Type"].append(subscription.type.value)
-                    table["Pattern"].append(subscription.value)
+                    table["Value"].append(subscription.value)
             await send_table(ctx, table)
 
     @subscribe.command(name="clear", help="Clears all your subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
@@ -333,9 +333,54 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     ################################################
 
     @commands.command(name="checks", help="Outputs data on completed/total checks per slot", ignore_extra=False)
-    async def checks(self, ctx: BotContext, mode: Literal["list", "graph"]) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
+    async def checks(self, ctx: BotContext, mode: StatsOutputMode) -> None:
+        check_counts = {
+            self._state.resolve_slot(slot_id): counts
+            for slot_id, counts in (await self._web.fetch_slot_check_counts()).items()
+        }
+        check_counts = dict(sorted(check_counts.items(), key=lambda pair: pair[0].name))
+
+        if mode == StatsOutputMode.GRAPH:
+            await self._send_graph(
+                ctx, {slot: counts.percent for slot, counts in check_counts.items()}, "Completion Percentage"
+            )
+        else:
+            table: dict[str, list[str]] = {"Slot": [], "Found": [], "Total": [], "Percent": []}
+            for slot, counts in check_counts.items():
+                table["Slot"].append(str(slot))
+                table["Found"].append(str(counts.found))
+                table["Total"].append(str(counts.total))
+                table["Percent"].append(f"{counts.percent}%")
+            await send_table(ctx, table, right_just=True)
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
-    async def deaths(self, ctx: BotContext, mode: Literal["list", "graph"]) -> None:
-        raise ADOSError("Not yet implemented")  # TODO: Implement
+    async def deaths(self, ctx: BotContext, mode: StatsOutputMode) -> None:
+        death_counts = dict(sorted(self._state.death_counts().items(), key=lambda pair: pair[0].name))
+        if not death_counts:
+            await send_message(ctx, "No death links have been triggered yet")
+            return
+
+        if mode == StatsOutputMode.GRAPH:
+            await self._send_graph(ctx, death_counts, "Death Counts")
+        else:
+            table: dict[str, list[str]] = {"Slot": [], "Deaths": []}
+            for slot, count in death_counts.items():
+                table["Slot"].append(str(slot))
+                table["Deaths"].append(str(count))
+            await send_table(ctx, table, right_just=True)
+
+    async def _send_graph(self, ctx: BotContext, data: dict[SlotInfo, int], title: str) -> None:
+        plt.figure(figsize=(max(8, len(data) * 0.5), 6))
+        bars = plt.bar([str(slot) for slot in data.keys()], list(data.values()))
+        plt.bar_label(bars)
+        plt.title(title)
+        plt.xlabel("Slot")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+
+        image_buffer = io.BytesIO()
+        plt.savefig(image_buffer, dpi=200, format="png")
+        image_buffer.seek(0)
+        plt.close()
+
+        await ctx.send(file=discord.File(fp=image_buffer, filename="stats.png"))
