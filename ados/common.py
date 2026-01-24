@@ -29,13 +29,13 @@ class ItemCategoryFilter(str, Enum):
     PROGRESSION = "progression"
     USEFUL = "useful"
     ALL = "all"
-    TRAP = "trap"
+    TRAPS = "traps"
 
     def check(self, category: ItemCategory) -> bool:
         if self == ItemCategoryFilter.NONE:
             return False
         if category == ItemCategory.TRAP:
-            return self == ItemCategoryFilter.TRAP
+            return self == ItemCategoryFilter.TRAPS
         if self == ItemCategoryFilter.ALL:
             return True
         if self == ItemCategoryFilter.USEFUL:

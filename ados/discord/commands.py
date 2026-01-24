@@ -311,7 +311,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                     table["Value"].append(subscription.value)
             await send_table(ctx, table)
 
-    @subscribe.command(name="clear", help="Clears all your subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
         self._state.remove_user_subscription(ctx.author.id, flags.slot, "")
         await send_success(ctx, "You have cleared your item/group subscriptions")
