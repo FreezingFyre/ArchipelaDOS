@@ -4,7 +4,7 @@
 
 All commands are available to all users, from whatever Discord channels are configured. Commands are also usable from threads within the configured channels, and in user DMs. For some commands with large output (such as `!help` and `!replay`), the bot will reply in a thread to keep the main channel decluttered. These threads are automatically archived by the bot after a period of inactivity.
 
-For the below command specs, for those who are unfamiliar: `<angle_brackets>` denote required fields, while `[square_brackets]` denote optional fields. Fields do _not_ need to be surrounded with quotes to work, and slot/item/group names are _not_ case-sensitive. Some examples of valid commands (all specified in the tables below):
+For the below command specs, for those who are unfamiliar: `<angle_brackets>` denote required fields, while `[square_brackets]` denote optional fields. Fields do *not* need to be surrounded with quotes to work, and slot/item/group names are *not* case-sensitive. Some examples of valid commands (all specified in the tables below):
 
 - `!help`
 - `!help slot clear`

@@ -25,7 +25,7 @@ from ados.config import ADOSConfig
 _log = logging.getLogger(__name__)
 
 
-RETRY_DELAYS = [timedelta(seconds=x) for x in (0, 1, 3, 6, 10)]
+RETRY_DELAYS = [timedelta(seconds=x) for x in (0, 2, 5, 10, 20)]
 
 
 # Provides access to the Archipelago socket interface. Establishes a connection in

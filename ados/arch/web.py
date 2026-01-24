@@ -55,18 +55,18 @@ class WebClient:
         _log.info("Refreshing web information from '%s'", self.room_url)
 
         async with ClientSession(timeout=ClientTimeout(5)) as http_session:
-            http_ret = await http_session.get(f"{self.room_url}?update")
-            if not http_ret.ok:
-                raise ADOSError(f"Failed to access room at '{self.room_url}' (status code {http_ret.status})")
+            async with http_session.get(f"{self.room_url}?update") as http_ret:
+                if not http_ret.ok:
+                    raise ADOSError(f"Failed to access room at '{self.room_url}' (status code {http_ret.status})")
 
-            http_text = await http_ret.text()
-            tracker_match = TRACKER_REGEX.search(http_text)
-            port_match = PORT_REGEX.search(http_text)
-            if not tracker_match or not port_match:
-                raise ADOSError(f"Failed to parse URL information at '{self.room_url}'")
+                http_text = await http_ret.text()
+                tracker_match = TRACKER_REGEX.search(http_text)
+                port_match = PORT_REGEX.search(http_text)
+                if not tracker_match or not port_match:
+                    raise ADOSError(f"Failed to parse URL information at '{self.room_url}'")
 
-            self._tracker_url = f"https://{BASE_URL}/tracker/{tracker_match.group(1)}"
-            self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
+                self._tracker_url = f"https://{BASE_URL}/tracker/{tracker_match.group(1)}"
+                self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
 
         _log.info("Completed web information refresh; server is running at '%s'", self.server_url)
 
@@ -76,27 +76,27 @@ class WebClient:
         _log.info("Fetching slot check completion info from tracker at '%s'", self.tracker_url)
 
         async with ClientSession(timeout=ClientTimeout(5)) as http_session:
-            http_ret = await http_session.get(self.tracker_url)
-            if not http_ret.ok:
-                raise ADOSError(f"Failed to access tracker at '{self.tracker_url}' (status code {http_ret.status})")
+            async with http_session.get(self.tracker_url) as http_ret:
+                if not http_ret.ok:
+                    raise ADOSError(f"Failed to access tracker at '{self.tracker_url}' (status code {http_ret.status})")
 
-            next_slot_id: Optional[int] = -1
-            async for line in http_ret.content:
-                line_text = line.decode()
-                if CHECK_START_SENTINEL in line_text:
-                    next_slot_id = None
-                    continue
-                if CHECK_END_SENTINEL in line_text:
-                    break
+                next_slot_id: Optional[int] = -1
+                async for line in http_ret.content:
+                    line_text = line.decode()
+                    if CHECK_START_SENTINEL in line_text:
+                        next_slot_id = None
+                        continue
+                    if CHECK_END_SENTINEL in line_text:
+                        break
 
-                if re.match(SLOT_ID_REGEX, line_text):
-                    next_slot_id = int(line_text.strip())
-                elif re.match(COMPLETION_REGEX, line_text) and next_slot_id is not None:
-                    found_str, total_str = line_text.strip().split("/")
-                    found, total = int(found_str), int(total_str)
-                    percent = int(found / total * 100) if total > 0 else 0
-                    check_counts[next_slot_id] = CheckCounts(found, total, percent)
-                    next_slot_id = None
+                    if re.match(SLOT_ID_REGEX, line_text):
+                        next_slot_id = int(line_text.strip())
+                    elif re.match(COMPLETION_REGEX, line_text) and next_slot_id is not None:
+                        found_str, total_str = line_text.strip().split("/")
+                        found, total = int(found_str), int(total_str)
+                        percent = int(found / total * 100) if total > 0 else 0
+                        check_counts[next_slot_id] = CheckCounts(found, total, percent)
+                        next_slot_id = None
 
         _log.info("Completed fetching slot check completion info")
         return check_counts
