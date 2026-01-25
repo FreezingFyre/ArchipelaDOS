@@ -127,6 +127,5 @@ class SocketClient:
         self._handle_message(ConnectionClosedMessage())
 
     def _handle_message(self, message: ServerMessage) -> None:
-        _log.info("Received '%s' message from the server", type(message).__name__)
         for handler in self._handlers.get(type(message), []):
             handler(message)

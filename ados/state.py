@@ -242,6 +242,14 @@ class GlobalState:
         item_id = self._game_item_ids_by_name[game][value_lower]
         return self._game_items[game][item_id]
 
+    def search_items(self, game: str, search_text: str) -> list[ItemInfo]:
+        search_text_lower = search_text.lower()
+        matching_items: list[ItemInfo] = []
+        for item in self._game_items.get(game, {}).values():
+            if search_text_lower in item.name.lower():
+                matching_items.append(item)
+        return matching_items
+
     def resolve_location(self, game: str, location_id: int) -> LocationInfo:
         if location_id not in self._game_locations.get(game, {}):
             raise ADOSError(f"Location ID {location_id} does not exist in game `{game}`")
@@ -256,7 +264,7 @@ class GlobalState:
 
     def get_user_slots(self, user_id: int) -> list[SlotInfo]:
         slot_ids = self._state.user_slot_ids.get(user_id, set())
-        return [self._slots[slot_id] for slot_id in slot_ids]
+        return sorted([self._slots[slot_id] for slot_id in slot_ids], key=lambda slot: slot.name)
 
     @persist
     def add_user_slot(self, user_id: int, slot: SlotInfo) -> None:

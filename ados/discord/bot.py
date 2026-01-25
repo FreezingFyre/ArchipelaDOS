@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
 from typing import Optional
 
 import discord
@@ -20,16 +19,11 @@ from ados.common import ADOSError
 from ados.config import ADOSConfig
 from ados.discord.broadcast import MessageBroadcaster
 from ados.discord.commands import Commands
-from ados.discord.common import COMMAND_PREFIX, THREAD_NAME, BotContext, send_failure
+from ados.discord.common import COMMAND_PREFIX, BotContext, send_failure
 from ados.discord.help import HelpCommand
 from ados.state import GlobalState
 
 _log = logging.getLogger(__name__)
-
-# On each cleanup interval, ArchipelaDOS threads with no activity within the inactivity
-# threshold will be archived.
-CLEANUP_INTERVAL = timedelta(minutes=1)
-CLEANUP_INACTIVITY_THRESHOLD = timedelta(minutes=5)
 
 
 # The main ArchipelaDOS Discord bot class. Handles processing of user commands, sending
@@ -97,7 +91,6 @@ class ADOSBot(commands.Bot):
             )
 
         self._broadcaster.start(self._guild)
-        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def on_disconnect(self) -> None:
         _log.warning("Disconnected from Discord, reconnect will be attempted automatically")
@@ -128,6 +121,9 @@ class ADOSBot(commands.Bot):
 
         await super().on_message(message)  # type: ignore[no-untyped-call]
 
+    async def on_command(self, context: BotContext) -> None:
+        _log.info("Processing user command '%s'", context.message.content)
+
     # Handles different classes of errors raised during command processing.
     #   - Case #1: User syntax mistakes
     #   - Case #2: Expected failure conditions, likely user mistakes
@@ -142,47 +138,6 @@ class ADOSBot(commands.Bot):
         else:
             _log.error("Unexpected error processing user command '%s': %s", context.message.content, exception)
             await send_failure(context, "Something went wrong while processing your command.")
-
-    # Periodically cleans up old threads in the command channels. Threads that have had no new
-    # activity within the inactivity threshold are archived.
-    async def _cleanup_loop(self) -> None:
-
-        async def _cleanup_job() -> None:
-            if not self._guild or not self._connected:
-                return
-
-            archived_count = 0
-            bot_thread_count = 0
-            archive_cutoff = datetime.now() - CLEANUP_INACTIVITY_THRESHOLD
-            _log.debug("Checking for inactive threads to archive")
-
-            threads = await self._guild.active_threads()
-            for thread in threads:
-                if thread.name != THREAD_NAME or thread.archived or thread.parent_id not in self._command_channel_ids:
-                    continue
-                bot_thread_count += 1
-                new_messages = await thread.history(limit=1, after=archive_cutoff).flatten()
-                if not new_messages:
-                    archived_count += 1
-                    await thread.edit(archived=True)
-
-            (_log.debug if archived_count == 0 else _log.info)(
-                "Archived %d inactive threads out of %d bot threads; checked %d total threads",
-                archived_count,
-                bot_thread_count,
-                len(threads),
-            )
-
-        # Use asyncio.gather to run the cleanup job and the sleep concurrently, so whichever
-        # takes longer determines the interval.
-        while True:
-            try:
-                await asyncio.gather(
-                    _cleanup_job(),
-                    asyncio.sleep(CLEANUP_INTERVAL.total_seconds()),
-                )
-            except Exception as ex:
-                _log.error("Error during thread cleanup: %s", str(ex))
 
     # If the socket disconnects, we want to refresh the room and attempt a reconnect before
     # erroring out.

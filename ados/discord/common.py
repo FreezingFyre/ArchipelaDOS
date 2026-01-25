@@ -73,6 +73,8 @@ async def _send_raw(ctx: BotContext, messages: list[str], *, reply: bool) -> Non
     else:
         thread = ctx.message.thread
         if thread is None:
-            thread = await ctx.message.create_thread(name=THREAD_NAME)
+            thread = await ctx.message.create_thread(
+                name=THREAD_NAME, auto_archive_duration=discord.ThreadArchiveDuration.one_hour.value
+            )
         for message in messages:
             await thread.send(message)

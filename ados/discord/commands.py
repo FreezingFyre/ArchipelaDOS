@@ -108,19 +108,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         await self._socket.connect(self._web.server_url, fetch_data=False)
         await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
 
-    @commands.command(name="info", help="Get information about the Archipelago room", ignore_extra=False)
-    async def info(self, ctx: BotContext) -> None:
-        port = self._web.server_url.split(":")[-1]
-        slot_names_joined = join_objects(self._state.all_slots())
-        message = [
-            "Room information:",
-            f"- Port: {port}",
-            f"- Room URL: <{self._web.room_url}>",
-            f"- Tracker URL: <{self._web.tracker_url}>",
-            f"- Available slots: {slot_names_joined}",
-        ]
-        await send_message(ctx, "\n".join(message))
-
     ################################################
     ########### SLOT MANAGEMENT COMMANDS ###########
     ################################################
@@ -155,17 +142,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def slot_clear(self, ctx: BotContext) -> None:
         self._state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
-
-    @slot.command(name="info", help="Get information about a specific slot", ignore_extra=False)  # type: ignore[arg-type]
-    async def slot_info(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        game = cast(SlotInfo, flags.slot).game
-        groups_joined = join_objects(self._state.all_groups(game))
-        message = [
-            f"Slot information for `{flags.slot}`:",
-            f"- Game: `{game}`",
-            f"- Item groups: {groups_joined}",
-        ]
-        await send_message(ctx, "\n".join(message))
 
     ################################################
     ######### NOTIFICATION REPLAY COMMANDS #########
@@ -327,6 +303,66 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if len(slots) > 1:
             raise ADOSError("You are registered for multiple slots; please specify a slot")
         return slots[0]
+
+    ################################################
+    ############ INFO QUERYING COMMANDS ############
+    ################################################
+
+    class InfoFlags(commands.FlagConverter):
+        slot: Optional[SlotInfoArg] = commands.flag(positional=True, default=None)
+
+    class InfoFlagsValue(commands.FlagConverter):
+        value: StringArg = commands.flag(positional=True)
+        slot: Optional[SlotInfoArg] = None
+
+    @commands.group(name="info", help="Query for information about the multiworld, slots, or items", invoke_without_command=True)  # type: ignore[arg-type]
+    async def info(self, ctx: BotContext) -> None:
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}info`")
+
+    @info.command(name="room", help="Get information about the Archipelago room", ignore_extra=False)  # type: ignore[arg-type]
+    async def info_room(self, ctx: BotContext) -> None:
+        port = self._web.server_url.split(":")[-1]
+        slot_names_joined = join_objects(self._state.all_slots())
+        message = [
+            "Room information:",
+            f"- Port: {port}",
+            f"- Room URL: <{self._web.room_url}>",
+            f"- Tracker URL: <{self._web.tracker_url}>",
+            f"- Available slots: {slot_names_joined}",
+        ]
+        await send_message(ctx, "\n".join(message))
+
+    @info.command(name="slot", help="Get information about your registered slots (or a specified slot)", ignore_extra=False)  # type: ignore[arg-type]
+    async def info_slot(self, ctx: BotContext, *, flags: InfoFlags) -> None:
+        slots = self._state.get_user_slots(ctx.author.id) if flags.slot is None else [cast(SlotInfo, flags.slot)]
+        message = []
+        for slot in slots:
+            groups_joined = join_objects(self._state.all_groups(slot.game))
+            message.append(
+                "\n".join(
+                    [
+                        f"Slot information for `{slot}`:",
+                        f"- Game: `{slot.game}`",
+                        f"- Item groups: {groups_joined}",
+                    ]
+                )
+            )
+        await send_message(ctx, "\n\n".join(message))
+
+    @info.command(name="item", help="Search for items in your regsitered slots (or a specified slot) containing the given text", ignore_extra=False)  # type: ignore[arg-type]
+    async def info_item(self, ctx: BotContext, *, flags: InfoFlagsValue) -> None:
+        slots = self._state.get_user_slots(ctx.author.id) if flags.slot is None else [cast(SlotInfo, flags.slot)]
+        slot_items = {slot: self._state.search_items(slot.game, cast(str, flags.value)) for slot in slots}
+
+        if all(not items for items in slot_items.values()):
+            await send_message(ctx, f"No items found matching `{flags.value}`")
+        else:
+            table: dict[str, list[str]] = {"Slot": [], "Item": []}
+            for slot, items in slot_items.items():
+                for item in sorted(items, key=lambda i: i.name):
+                    table["Slot"].append(str(slot))
+                    table["Item"].append(item.name)
+            await send_table(ctx, table, reply=True)
 
     ################################################
     ################ STATS COMMANDS ################

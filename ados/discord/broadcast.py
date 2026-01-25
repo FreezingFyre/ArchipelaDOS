@@ -194,12 +194,6 @@ class MessageBroadcaster:
         if not channel_names:
             return
 
-        _log.debug(
-            "Queueing %s item send message for delivery to channels: %s",
-            message.category.value,
-            channel_names,
-        )
-
         to_slot = self._state.resolve_slot(message.to_slot_id)
         from_slot = self._state.resolve_slot(message.from_slot_id)
         item = self._state.resolve_item(to_slot.game, message.item_id)
@@ -219,6 +213,7 @@ class MessageBroadcaster:
                 content = f"{highlight(from_slot)} sent {highlight(item)} to {highlight(to_slot)}"
         content += f"  —  via check {highlight(location)}"
 
+        _log.info("Handling item '%s' sent from '%s' to '%s'", item, from_slot, to_slot)
         mention_user_ids = self._state.get_subscribed_users(to_slot, item)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content, mention_user_ids))
 
@@ -226,53 +221,53 @@ class MessageBroadcaster:
         if not (channel_names := self._filter_channels(lambda config: config.send_death_links)):
             return
 
-        _log.debug("Queueing death link message for delivery to channels: %s", channel_names)
-
         content = highlight(message.slot_name)
         content = random.choice(self._death_link_messages).format(player=content)
         content = f":headstone: {content}"
+
+        _log.info("Handling death link from '%s'", message.slot_name)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _handle_join_leave(self, message: JoinLeaveMessage) -> None:
         if not (channel_names := self._filter_channels(lambda config: config.send_join_leave)):
             return
 
-        _log.debug("Queueing player join/leave message for delivery to channels: %s", channel_names)
-
         slot = self._state.resolve_slot(message.slot_id)
         if message.join_or_leave == JoinLeaveType.JOIN:
             content = f":arrow_right: {highlight(slot)} has joined the game"
         else:
             content = f":arrow_left: {highlight(slot)} has left the game"
+
+        _log.info("Handling %s from '%s'", message.join_or_leave.value, slot)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _handle_player_chat(self, message: PlayerChatMessage) -> None:
         if not (channel_names := self._filter_channels(lambda config: config.send_player_chat)):
             return
 
-        _log.debug("Queueing player chat message for delivery to channels: %s", channel_names)
-
         slot = self._state.resolve_slot(message.slot_id)
         content = f"{highlight(slot)} says: {message.message}"
+
+        _log.info("Handling chat from '%s': '%s'", slot, message.message)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _handle_server_chat(self, message: ServerChatMessage) -> None:
         if not (channel_names := self._filter_channels(lambda config: config.send_server_chat)):
             return
 
-        _log.debug("Queueing server chat message for delivery to channels: %s", channel_names)
-
         content = f"Server says: {message.message}"
+
+        _log.info("Handling server chat: '%s'", message.message)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _handle_goal_reached(self, message: GoalReachedMessage) -> None:
         if not (channel_names := self._filter_channels(lambda config: config.send_goal_reached)):
             return
 
-        _log.debug("Queueing goal reached message for delivery to channels: %s", channel_names)
-
         slot = self._state.resolve_slot(message.slot_id)
         content = f":trophy: {highlight(slot)} has reached their goal!"
+
+        _log.info("Handling goal reached for '%s'", slot)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _filter_channels(self, predicate: Callable[[BroadcastConfig], bool]) -> list[str]:

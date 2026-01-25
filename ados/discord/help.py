@@ -81,13 +81,17 @@ class HelpCommand(commands.HelpCommand):
                 continue
             flags: list[str] = []
             for flag_name, flag_details in param.annotation.__commands_flags__.items():
-                if flag_details.positional:
-                    flags.insert(0, f"<{flag_name}>")
-                elif isinstance(flag_details.annotation, EnumType):
+                if isinstance(flag_details.annotation, EnumType):
                     enum_values = "|".join(cast(Enum, e).value for e in flag_details.annotation)  # type: ignore[var-annotated]
-                    flags.append(f"[{flag_name}:{enum_values}]")
+                    flag_value = f"<{enum_values}>"
                 else:
-                    flags.append(f"[{flag_name}:...]")
+                    flag_value = f"<{flag_name}>"
+
+                if flag_details.positional:
+                    flags.insert(0, flag_value)
+                else:
+                    flags.append(f"[{flag_name}: {flag_value}]")
+
             signature = signature.replace(f"<{param.name}>", " ".join(flags))
 
         message_lines: list[str] = []

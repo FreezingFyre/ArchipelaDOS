@@ -23,7 +23,6 @@ For the below command specs, for those who are unfamiliar: `<angle_brackets>` de
 | `!dmme`           | Trigger the bot to send you a direct message |
 | `!threadme`       | Trigger the bot to send you a message in a new thread |
 | `!refresh`        | Refresh the room on archipelago.gg, reconnecting the bot if it got disconnected |
-| `!info`           | Get information about the Archipelago room (port, list of slots, etc) |
 
 ## Slot registration commands
 
@@ -35,7 +34,6 @@ Users can "register" themselves for particular slots. This affects which slots' 
 | `!slot remove <slot>` | Unregisters you from the given `slot` |
 | `!slot list`          | Lists all slots for which you are registered |
 | `!slot clear`         | Clears your registration for all slots |
-| `!slot info <slot>`   | Get information about a specific slot (corresponding game, item groups, etc) |
 
 ## Item send replay commands
 
@@ -49,7 +47,7 @@ A particularly useful feature of the bot is the ability of users to replay the h
 
 ## Subscription commands
 
-Another useful feature of the bot is the ability of users to subscribe to particular item notifications. If a user so chooses, they can subscribe so that the bot will @mention them when a specific item (or item from a specific group) is sent to their registered slot. This is useful if the user is stuck behind an item, or if they regard one group of items as particularly important for them to know about. Note: item groups are discoverable with `!slot info`.
+Another useful feature of the bot is the ability of users to subscribe to particular item notifications. If a user so chooses, they can subscribe so that the bot will @mention them when a specific item (or item from a specific group) is sent to their registered slot. This is useful if the user is stuck behind an item, or if they regard one group of items as particularly important for them to know about. Note: item groups are discoverable with `!info slot`.
 
 | | |
 |-|-|
@@ -58,6 +56,16 @@ Another useful feature of the bot is the ability of users to subscribe to partic
 | `!subscribe remove <text> [slot: <slot>]` | Unsubscribes you from items/groups containing the given `text`; optionally filtered by `slot` |
 | `!subscribe list [slot: <slot>]`          | Lists your active item/group subscriptions; optionally filtered by `slot` |
 | `!subscribe clear [slot: <slot>]`         | Clears all your item/group subscriptions; optionally filtered by `slot` |
+
+## Info querying commands
+
+Sometimes it's useful to know information about particular slots, or items within slots. These commands provide an interface to query that sort of information.
+
+| | |
+|-|-|
+| `!info room`                       | Get information about the Archipelago room (port, list of slots, etc) |
+| `!info slot [slot]`                | Get information about your registered slots, or a specified slot (corresponding game, item groups, etc) |
+| `!info item <text> [slot: <slot>]` | Search for items in your regsitered slots, or a specified slot, containing the given text |
 
 ## Statistics commands
 

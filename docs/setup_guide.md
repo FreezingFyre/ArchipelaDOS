@@ -29,7 +29,7 @@ Setting up the bot is also a one-time deal. After you've set it up once (for a p
 
 Note: Python 3.13 should work as well, but 3.14 will *not*, as ArchipelaDOS's dependencies do not yet support the latest version.
 
-1. Download the .zip or .tar.gz of the latest [ArchipelaDOS release](https://github.com/FreezingFyre/ArchipelaDOS/releases)
+1. Download the .zip or .tar.gz of the [latest ArchipelaDOS release](https://github.com/FreezingFyre/ArchipelaDOS/releases/latest)
 2. Extract all files from the archive
 3. Navigate to the `ArchipelaDOS-<version>` folder within a terminal
     - On Windows, you can Shift/Right-Click in the folder in Windows Explorer and select `Open PowerShell window here`
