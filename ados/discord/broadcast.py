@@ -171,7 +171,7 @@ class MessageBroadcaster:
                     if user is not None:
                         mentions.append(user.mention)
                 if mentions:
-                    content += "\n" + " ".join(mentions)
+                    content += "  " + " ".join(mentions)
 
                 for channel_name in item.channel_names:
                     channel = self._channels.get(channel_name)
@@ -202,9 +202,9 @@ class MessageBroadcaster:
         self_send = message.to_slot_id == message.from_slot_id
         if message.category == ItemCategory.TRAP:
             if self_send:
-                content = f"{highlight(from_slot)} subjected themsevles to {highlight(item)}"
+                content = f":broken_heart: {highlight(from_slot)} subjected themsevles to {highlight(item)}"
             else:
-                content = f"{highlight(from_slot)} subjected {highlight(to_slot)} to {highlight(item)}"
+                content = f":broken_heart: {highlight(from_slot)} subjected {highlight(to_slot)} to {highlight(item)}"
         else:
             # pylint: disable-next = else-if-used
             if self_send:

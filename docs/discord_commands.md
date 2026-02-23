@@ -9,8 +9,8 @@ For the below command specs, for those who are unfamiliar: `<angle_brackets>` de
 - `!help`
 - `!help slot clear`
 - `!slot add My Slot`
-- `!replay all traps`
-- `!replay all slot: My Slot`
+- `!replay full traps`
+- `!replay full slot: My Slot`
 - `!subscribe item My Item slot: My Slot`
 - `!deaths graph`
 
@@ -51,8 +51,8 @@ Another useful feature of the bot is the ability of users to subscribe to partic
 
 | | |
 |-|-|
-| `!subscribe item <item> [slot: <slot>]`   | Subscribes you for the given `item`; *must* filter by `slot` if multi-registered |
-| `!subscribe group <group> [slot: <slot>]` | Subscribes you for the given item `group`; *must* filter by `slot` if multi-registered |
+| `!subscribe item <item> [slot: <slot>]`   | Subscribes you for the given `item`; optionally filtered by `slot` |
+| `!subscribe group <group> [slot: <slot>]` | Subscribes you for the given item `group`; optionally filtered by `slot` |
 | `!subscribe remove <text> [slot: <slot>]` | Unsubscribes you from items/groups containing the given `text`; optionally filtered by `slot` |
 | `!subscribe list [slot: <slot>]`          | Lists your active item/group subscriptions; optionally filtered by `slot` |
 | `!subscribe clear [slot: <slot>]`         | Clears all your item/group subscriptions; optionally filtered by `slot` |

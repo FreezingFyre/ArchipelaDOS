@@ -12,6 +12,7 @@ from ados.arch.messages import (
     ConnectedMessage,
     DataPackageMessage,
     DeathLinkMessage,
+    GoalReachedMessage,
     ItemGroupsMessage,
     ItemSendMessage,
     RoomUpdateMessage,
@@ -60,6 +61,11 @@ class ItemLogData(NamedTuple):
     user_slot_replay_index: dict[UserSlot, int] = defaultdict(int)
 
 
+# User input will match names in a case-insensitive, purely alphanumeric way
+def _normalize(value: str) -> str:
+    return "".join(c for c in value.lower() if c.isalnum())
+
+
 # The main ArchipelaDOS state management class. Handles information related to user state,
 # like registered slots and item subscriptions, and ensures this information is persisted
 # where necessary so that it is not lost on bot restarts. Also handles information fetched
@@ -102,14 +108,15 @@ class GlobalState:
         socket.add_message_handler(ItemGroupsMessage, self._handle_item_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
         socket.add_message_handler(DeathLinkMessage, self._handle_death_link)
+        socket.add_message_handler(GoalReachedMessage, self._handle_goal_reached)
 
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
     # will only affect aliases, so all IDs remain valid.
     def _handle_slot_update(self, message: ConnectedMessage | RoomUpdateMessage) -> None:
         self._slots = {slot.id: slot for slot in message.slots}
-        self._slot_ids_by_name = {slot.name.lower(): slot.id for slot in message.slots}
-        self._slot_ids_by_name.update({slot.alias.lower(): slot.id for slot in message.slots})
-        self._slot_ids_by_name.update({str(slot).lower(): slot.id for slot in message.slots})
+        self._slot_ids_by_name = {_normalize(slot.name): slot.id for slot in message.slots}
+        self._slot_ids_by_name.update({_normalize(slot.alias): slot.id for slot in message.slots})
+        self._slot_ids_by_name.update({_normalize(str(slot)): slot.id for slot in message.slots})
         _log.info("Populated slot information for %d slots", len(message.slots))
 
     # The DataPackageMessage is sent once on startup, to populate item and location mappings
@@ -117,7 +124,7 @@ class GlobalState:
     def _handle_data_package(self, message: DataPackageMessage) -> None:
         for game, items in message.game_items.items():
             self._game_items[game] = {item.id: item for item in items}
-            self._game_item_ids_by_name[game] = {item.name.lower(): item.id for item in items}
+            self._game_item_ids_by_name[game] = {_normalize(item.name): item.id for item in items}
         for game, locations in message.game_locations.items():
             self._game_locations[game] = {location.id: location for location in locations}
         _log.info("Populated packaged data for %d games", len(message.game_items))
@@ -157,6 +164,18 @@ class GlobalState:
     def _handle_death_link(self, message: DeathLinkMessage) -> None:
         slot = self.resolve_slot(message.slot_name)
         self._state.slot_deaths[slot.id] += 1
+
+    # Need to clear subscriptions for a slot when goal is reached so that users aren't spammed with item
+    # sends from all the released locations. Also clear from users' registered slots
+    @persist
+    def _handle_goal_reached(self, message: GoalReachedMessage) -> None:
+        if message.slot_id in self._state.slot_subscriptions:
+            self._state.slot_subscriptions.pop(message.slot_id)
+        for user_id in list(self._state.user_slot_ids.keys()):
+            if message.slot_id in self._state.user_slot_ids[user_id]:
+                self._state.user_slot_ids[user_id].remove(message.slot_id)
+                if not self._state.user_slot_ids[user_id]:
+                    self._state.user_slot_ids.pop(user_id)
 
     def _load_item_log(self) -> ItemLogData:
         data = ItemLogData()
@@ -218,15 +237,15 @@ class GlobalState:
                 raise ADOSError(f"Slot ID {value} does not exist in the multiworld")
             return self._slots[value]
 
-        value_lower = value.lower()
+        value_lower = _normalize(value)
         if value_lower not in self._slot_ids_by_name:
             raise ADOSError(f"Slot `{value}` does not exist in the multiworld")
         return self._slots[self._slot_ids_by_name[value_lower]]
 
     def resolve_group(self, game: str, group: str) -> str:
-        group_lower = group.lower()
+        group_lower = _normalize(group)
         for game_group in self._game_groups.get(game, set()):
-            if game_group.lower() == group_lower:
+            if _normalize(game_group) == group_lower:
                 return game_group
         raise ADOSError(f"Group `{group}` does not exist in game `{game}`")
 
@@ -236,7 +255,7 @@ class GlobalState:
                 raise ADOSError(f"Item ID {value} does not exist in game `{game}`")
             return self._game_items[game][value]
 
-        value_lower = value.lower()
+        value_lower = _normalize(value)
         if value_lower not in self._game_item_ids_by_name.get(game, {}):
             raise ADOSError(f"Item `{value}` does not exist in game `{game}`")
         item_id = self._game_item_ids_by_name[game][value_lower]
@@ -340,7 +359,7 @@ class GlobalState:
 
     @persist
     def remove_user_subscription(self, user_id: int, slot: Optional[SlotInfo], value: str) -> None:
-        value_lower = value.lower()
+        value_lower = _normalize(value)
         to_check_slots = [slot] if slot is not None else self.get_user_slots(user_id)
         for to_check_slot in to_check_slots:
             subscriptions = self._state.slot_subscriptions.get(to_check_slot.id, set())
@@ -349,5 +368,5 @@ class GlobalState:
             self._state.slot_subscriptions[to_check_slot.id] = {
                 subscription
                 for subscription in subscriptions
-                if not (subscription.user_id == user_id and value_lower in subscription.value.lower())
+                if not (subscription.user_id == user_id and value_lower in _normalize(subscription.value))
             }

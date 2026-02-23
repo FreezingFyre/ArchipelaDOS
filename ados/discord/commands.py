@@ -256,17 +256,37 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="item", help="Subscribes you for the given item (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_item(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
-        slot = self._resolve_subscribe_slot(ctx, flags.slot)
-        item = self._state.resolve_item(slot.game, cast(str, flags.item))
-        self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.ITEM, item.name)
-        await send_success(ctx, f"You have subscribed to item `{item.name}` in slot `{slot}`")
+        matching_slots: list[SlotInfo] = []
+        slots = self._resolve_subscribe_slots(ctx, flags.slot)
+        for slot in slots:
+            try:
+                item = self._state.resolve_item(slot.game, cast(str, flags.item))
+                self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.ITEM, item.name)
+                matching_slots.append(slot)
+            except ADOSError:
+                continue
+        if not matching_slots:
+            raise ADOSError(f"Item `{flags.item}` does not exist in the searched slots")
+
+        slot_names_joined = join_objects(matching_slots)
+        await send_success(ctx, f"You have subscribed to item `{item.name}` in: {slot_names_joined}")
 
     @subscribe.command(name="group", help="Subscribes you for the given item group (can filter by slot, and must if multi-registered)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_group(self, ctx: BotContext, *, flags: SubscribeFlagsGroup) -> None:
-        slot = self._resolve_subscribe_slot(ctx, flags.slot)
-        group = self._state.resolve_group(slot.game, cast(str, flags.group))
-        self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
-        await send_success(ctx, f"You have subscribed to item group `{group}` in slot `{slot}`")
+        matching_slots: list[SlotInfo] = []
+        slots = self._resolve_subscribe_slots(ctx, flags.slot)
+        for slot in slots:
+            try:
+                group = self._state.resolve_group(slot.game, cast(str, flags.group))
+                self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
+                matching_slots.append(slot)
+            except ADOSError:
+                continue
+        if not matching_slots:
+            raise ADOSError(f"Group `{flags.group}` does not exist in the searched slots")
+
+        slot_names_joined = join_objects(matching_slots)
+        await send_success(ctx, f"You have subscribed to item group `{group}` in: {slot_names_joined}")
 
     @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsValue) -> None:
@@ -292,17 +312,15 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         self._state.remove_user_subscription(ctx.author.id, flags.slot, "")
         await send_success(ctx, "You have cleared your item/group subscriptions")
 
-    def _resolve_subscribe_slot(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> SlotInfo:
+    def _resolve_subscribe_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
         if flag_slot is not None:
             assert isinstance(flag_slot, SlotInfo)
-            return flag_slot
+            return [flag_slot]
 
         slots = self._state.get_user_slots(ctx.author.id)
         if len(slots) == 0:
             raise ADOSError("You are not registered for any slots; either register or specify a slot")
-        if len(slots) > 1:
-            raise ADOSError("You are registered for multiple slots; please specify a slot")
-        return slots[0]
+        return slots
 
     ################################################
     ############ INFO QUERYING COMMANDS ############
