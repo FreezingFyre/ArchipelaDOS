@@ -23,7 +23,7 @@ CHECK_END_SENTINEL = "<td>All Games</td>"
 class CheckCounts(NamedTuple):
     found: int
     total: int
-    percent: int
+    percent: float
 
 
 # Provides access to the data served by the Archipelago web interface. Stores a cached
@@ -94,7 +94,7 @@ class WebClient:
                     elif re.match(COMPLETION_REGEX, line_text) and next_slot_id is not None:
                         found_str, total_str = line_text.strip().split("/")
                         found, total = int(found_str), int(total_str)
-                        percent = int(found / total * 100) if total > 0 else 0
+                        percent = (found / total * 100) if total > 0 else 0
                         check_counts[next_slot_id] = CheckCounts(found, total, percent)
                         next_slot_id = None
 

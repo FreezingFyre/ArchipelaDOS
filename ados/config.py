@@ -53,6 +53,7 @@ class ADOSConfig(BaseModel):
     archipelago_game: str
     data_path: Annotated[str, BeforeValidator(_expand_path)]
     death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
+    slot_players: dict[str, set[str]]
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
     discord_token: str = Field(..., exclude=True, repr=False)

@@ -165,13 +165,12 @@ class MessageBroadcaster:
             content = item.content
 
             try:
-                mentions: list[str] = []
+                mentions = ""
                 for user_id in item.mention_user_ids:
                     user = await self._client.get_or_fetch(discord.User, user_id)
                     if user is not None:
-                        mentions.append(user.mention)
-                if mentions:
-                    content += "  " + " ".join(mentions)
+                        mentions += f" {user.mention}"
+                content = content.format(mentions=mentions)
 
                 for channel_name in item.channel_names:
                     channel = self._channels.get(channel_name)
@@ -202,16 +201,16 @@ class MessageBroadcaster:
         self_send = message.to_slot_id == message.from_slot_id
         if message.category == ItemCategory.TRAP:
             if self_send:
-                content = f":broken_heart: {highlight(from_slot)} subjected themsevles to {highlight(item)}"
+                content = f":broken_heart: {highlight(from_slot)} subjected themsevles to `{item}`"
             else:
-                content = f":broken_heart: {highlight(from_slot)} subjected {highlight(to_slot)} to {highlight(item)}"
+                content = f":broken_heart: {highlight(from_slot)} subjected {highlight(to_slot)} to `{item}`"
         else:
             # pylint: disable-next = else-if-used
             if self_send:
-                content = f"{highlight(from_slot)} found their own {highlight(item)}"
+                content = f"{highlight(from_slot)} found their own `{item}`"
             else:
-                content = f"{highlight(from_slot)} sent {highlight(item)} to {highlight(to_slot)}"
-        content += f"  —  via check {highlight(location)}"
+                content = f"{highlight(from_slot)} sent {highlight(to_slot)} their `{item}`"
+        content += f"{{mentions}}\n-# via check {location}"
 
         _log.info("Handling item '%s' sent from '%s' to '%s'", item, from_slot, to_slot)
         mention_user_ids = self._state.get_subscribed_users(to_slot, item)

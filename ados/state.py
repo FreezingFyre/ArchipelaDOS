@@ -84,6 +84,7 @@ class GlobalState:
 
     def __init__(self, config: ADOSConfig, socket: SocketClient):
         os.makedirs(config.data_path, exist_ok=True)
+        self._config = config
         self._state_file = os.path.join(config.data_path, f"{config.archipelago_room}_state.json")
         self._item_log_file = os.path.join(config.data_path, f"{config.archipelago_room}_item_log.txt")
 
@@ -93,6 +94,7 @@ class GlobalState:
         self._game_items: dict[str, dict[int, ItemInfo]] = {}
         self._game_item_ids_by_name: dict[str, dict[str, int]] = {}
         self._game_locations: dict[str, dict[int, LocationInfo]] = {}
+        self._game_location_ids_by_name: dict[str, dict[str, int]] = {}
         self._game_groups: dict[str, set[str]] = {}
 
         # This is the information about slot items sends
@@ -117,6 +119,13 @@ class GlobalState:
         self._slot_ids_by_name = {_normalize(slot.name): slot.id for slot in message.slots}
         self._slot_ids_by_name.update({_normalize(slot.alias): slot.id for slot in message.slots})
         self._slot_ids_by_name.update({_normalize(str(slot)): slot.id for slot in message.slots})
+        for slot, players in self._config.slot_players.items():
+            slot_lower = _normalize(slot)
+            if slot_lower not in self._slot_ids_by_name:
+                _log.warning("Could not assign players to nonexistent slot '%s'", slot)
+                continue
+            slot_id = self._slot_ids_by_name[slot_lower]
+            self._slot_ids_by_name.update({_normalize(player): slot_id for player in players})
         _log.info("Populated slot information for %d slots", len(message.slots))
 
     # The DataPackageMessage is sent once on startup, to populate item and location mappings
@@ -127,6 +136,7 @@ class GlobalState:
             self._game_item_ids_by_name[game] = {_normalize(item.name): item.id for item in items}
         for game, locations in message.game_locations.items():
             self._game_locations[game] = {location.id: location for location in locations}
+            self._game_location_ids_by_name[game] = {_normalize(location.name): location.id for location in locations}
         _log.info("Populated packaged data for %d games", len(message.game_items))
 
     # The ItemGroupsMessage is sent once on startup, to populate item group mappings for
@@ -149,6 +159,7 @@ class GlobalState:
         location = self.resolve_location(self._slots[message.from_slot_id].game, message.location_id)
 
         sent_item = SentItemInfo(
+            timestamp=datetime.now().timestamp(),
             item_name=item.name,
             location_name=location.name,
             to_slot_id=message.to_slot_id,
@@ -269,9 +280,16 @@ class GlobalState:
                 matching_items.append(item)
         return matching_items
 
-    def resolve_location(self, game: str, location_id: int) -> LocationInfo:
-        if location_id not in self._game_locations.get(game, {}):
-            raise ADOSError(f"Location ID {location_id} does not exist in game `{game}`")
+    def resolve_location(self, game: str, value: str | int) -> LocationInfo:
+        if isinstance(value, int):
+            if value not in self._game_locations.get(game, {}):
+                raise ADOSError(f"Location ID {value} does not exist in game `{game}`")
+            return self._game_locations[game][value]
+
+        value_lower = _normalize(value)
+        if value_lower not in self._game_location_ids_by_name.get(game, {}):
+            raise ADOSError(f"Location `{value}` does not exist in game `{game}`")
+        location_id = self._game_location_ids_by_name[game][value_lower]
         return self._game_locations[game][location_id]
 
     def death_counts(self) -> dict[SlotInfo, int]:

@@ -1,16 +1,25 @@
 import json
 import logging
+import re
 from collections import defaultdict
 from enum import Enum
 from typing import Any, Iterator
 
 from websockets.typing import Data
 
-from ados.common import ItemCategory, ItemInfo, LocationInfo, SlotInfo
+from ados.common import (
+    ADOSError,
+    HintInfo,
+    HintStatus,
+    ItemCategory,
+    ItemInfo,
+    LocationInfo,
+    SlotInfo,
+)
 
 _log = logging.getLogger(__name__)
 
-ARCH_VERSION = "0.6.6"
+ARCH_VERSION = "0.6.7"
 ARCH_MAJOR, ARCH_MINOR, ARCH_BUILD = [int(part) for part in ARCH_VERSION.split(".")]
 
 
@@ -42,7 +51,7 @@ def connect_message(*, game: str, slot: str) -> str:
                 "uuid": "ArchipelaDOS",
                 "version": {"major": ARCH_MAJOR, "minor": ARCH_MINOR, "build": ARCH_BUILD, "class": "Version"},
                 "items_handling": 0b000,
-                "tags": ["TextOnly", "Tracker", "DeathLink"],
+                "tags": ["TextOnly", "DeathLink"],
                 "slot_data": False,
             }
         ]
@@ -71,6 +80,21 @@ def get_item_groups_message(games: list[str]) -> str:
             }
         ]
     )
+
+
+# Sent to the server to request information about current hints or hint point levels
+def get_hint_message() -> str:
+    return json.dumps([{"cmd": "Say", "text": "!hint"}])
+
+
+# Sent to the server to request a hint for a particular item
+def get_hint_item_message(item_name: str) -> str:
+    return json.dumps([{"cmd": "Say", "text": f"!hint {item_name}"}])
+
+
+# Sent to the server to request a hint for what is at a particular location
+def get_hint_location_message(location_name: str) -> str:
+    return json.dumps([{"cmd": "Say", "text": f"!hint_location {location_name}"}])
 
 
 ################################################
@@ -186,6 +210,39 @@ class GoalReachedMessage:
         self.slot_id: int = data["slot"]
 
 
+# Sent by the server to notify a client of the hints point available/required in for a slot
+class HintPointsMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        text = data["data"][0]["text"]
+        match = re.search(r"A hint costs (\d+) points?\. You have (\d+) points?\.", text)
+        if not match:
+            raise ADOSError(f"Unexpected hint points message format: {text}")
+        self.points_required = int(match.group(1))
+        self.points_available = int(match.group(2))
+
+
+# Sent by the server to notify a client of a collection of hints for a slot
+class HintsMessage:
+    def __init__(self, data: list[dict[str, Any]]) -> None:
+        def _get_status(info: dict[str, Any]) -> HintStatus:
+            for info_element in info.get("data", [])[::-1]:
+                if "hint_status" in info_element:
+                    return HintStatus(info_element["hint_status"])
+            return HintStatus.UNSPECIFIED
+
+        self.hints = [
+            HintInfo(
+                item_id=info["item"]["item"],
+                location_id=info["item"]["location"],
+                to_slot_id=info["receiving"],
+                from_slot_id=info["item"]["player"],
+                found=info["found"],
+                status=_get_status(info),
+            )
+            for info in data
+        ]
+
+
 type ServerMessage = (
     RoomInfoMessage
     | DataPackageMessage
@@ -200,45 +257,59 @@ type ServerMessage = (
     | PlayerChatMessage
     | ServerChatMessage
     | GoalReachedMessage
+    | HintPointsMessage
+    | HintsMessage
 )
 
 
 def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
-    for data in json.loads(raw_message):
-        try:
-            cmd = data.get("cmd", None)
-            if cmd is None:
-                _log.warning("Received server message without 'cmd' field: %s", data)
-                continue
+    try:
+        messages = json.loads(raw_message)
+
+        if len(messages) > 0 and all(
+            message.get("cmd") == "PrintJSON" and message.get("type") == "Hint" for message in messages
+        ):
+            yield HintsMessage(messages)
+            return
+
+        for message in messages:
+            cmd = message["cmd"]
 
             if cmd == "RoomInfo":
-                yield RoomInfoMessage(data)
+                yield RoomInfoMessage(message)
             elif cmd == "DataPackage":
-                yield DataPackageMessage(data)
+                yield DataPackageMessage(message)
             elif cmd == "Connected":
-                yield ConnectedMessage(data)
+                yield ConnectedMessage(message)
             elif cmd == "ConnectionRefused":
-                yield ConnectionRefusedMessage(data)
-            elif cmd == "RoomUpdate" and "players" in data:
-                yield RoomUpdateMessage(data)
-            elif cmd == "Retrieved" and all("_read_item_name_groups_" in key for key in data["keys"]):
-                yield ItemGroupsMessage(data)
-            elif cmd == "PrintJSON" and data.get("type") == "ItemSend":
-                yield ItemSendMessage(data)
-            elif cmd == "Bounced" and "DeathLink" in data.get("tags", []):
-                yield DeathLinkMessage(data)
+                yield ConnectionRefusedMessage(message)
+            elif cmd == "RoomUpdate" and "players" in message:
+                yield RoomUpdateMessage(message)
+            elif cmd == "Retrieved" and all("_read_item_name_groups_" in key for key in message["keys"]):
+                yield ItemGroupsMessage(message)
+            elif cmd == "PrintJSON" and message.get("type") == "ItemSend":
+                yield ItemSendMessage(message)
+            elif cmd == "Bounced" and "DeathLink" in message.get("tags", []):
+                yield DeathLinkMessage(message)
             elif (
                 cmd == "PrintJSON"
-                and data.get("type") in {"Join", "Part"}
-                and " tracking " not in data.get("data", [{}])[0].get("text", "")
+                and message.get("type") in {"Join", "Part"}
+                and " viewing " not in message.get("data", [{}])[0].get("text", "")
+                and " tracking " not in message.get("data", [{}])[0].get("text", "")
             ):
-                yield JoinLeaveMessage(data)
-            elif cmd == "PrintJSON" and data.get("type") == "Chat":
-                yield PlayerChatMessage(data)
-            elif cmd == "PrintJSON" and data.get("type") == "ServerChat":
-                yield ServerChatMessage(data)
-            elif cmd == "PrintJSON" and data.get("type") == "Goal":
-                yield GoalReachedMessage(data)
+                yield JoinLeaveMessage(message)
+            elif cmd == "PrintJSON" and message.get("type") == "Chat" and not message["message"].startswith("!"):
+                yield PlayerChatMessage(message)
+            elif cmd == "PrintJSON" and message.get("type") == "ServerChat":
+                yield ServerChatMessage(message)
+            elif cmd == "PrintJSON" and message.get("type") == "Goal":
+                yield GoalReachedMessage(message)
+            elif (
+                cmd == "PrintJSON"
+                and message.get("type") == "CommandResult"
+                and message.get("data", [{}])[0].get("text", "").startswith("A hint costs")
+            ):
+                yield HintPointsMessage(message)
 
-        except Exception as ex:
-            _log.error("Failed to deserialize server message: %s - %s", ex, data)
+    except Exception as ex:
+        _log.error("Failed to deserialize server message: %s - %s", ex, raw_message)

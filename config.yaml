@@ -24,6 +24,12 @@ data_path: data
 # with the name of the player who died.
 death_link_messages_path: null
 
+# For some messages sent from Archipelago, a player name will be provided instead of a slot name
+# or ID. This can happen for, say, death links from multiplayer games (like Minecraft, Raft),
+# which may provide a particular player's name. This setting links a list of player names to a slot
+# name, so that death links can be properly tracked per slot in these cases.
+slot_players: {}
+
 
 ###################
 # DISCORD OPTIONS #

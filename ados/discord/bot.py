@@ -49,7 +49,7 @@ class ADOSBot(commands.Bot):
 
         self._cleanup_task: Optional[asyncio.Task[None]] = None
 
-        bot_commands = Commands(self._web, self._socket, self._state)
+        bot_commands = Commands(config, self._web, self._socket, self._state)
         self.add_cog(bot_commands)
 
         self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)

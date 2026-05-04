@@ -45,6 +45,15 @@ class ItemCategoryFilter(str, Enum):
         return False
 
 
+# Possible statuses of a hint, as per the Archipelago spec
+class HintStatus(int, Enum):
+    UNSPECIFIED = 0
+    UNNEEDED = 10
+    AVOID = 20
+    PRIORITY = 30
+    FOUND = 40
+
+
 # Stores information about a particular slot in the multiworld. The id, name,
 # and game are immutable, while the alias may be changed during the session.
 class SlotInfo(NamedTuple):
@@ -84,8 +93,19 @@ class LocationInfo(NamedTuple):
 # the multiworld. Do not bother storing full ItemInfo or SlotInfo objects here,
 # as this is only used for user-facing outputs.
 class SentItemInfo(NamedTuple):
+    timestamp: float
     item_name: str
     location_name: str
     to_slot_id: int
     from_slot_id: int
     category: ItemCategory
+
+
+# Stores information about a hint about where an item is held in the multiworld.
+class HintInfo(NamedTuple):
+    item_id: int
+    location_id: int
+    to_slot_id: int
+    from_slot_id: int
+    found: bool
+    status: HintStatus
