@@ -5,7 +5,7 @@ import sys
 from ados.config import ADOSConfig, LoggingBehavior
 
 
-# Formatter for writing to log files and non-colored console output
+# Formatter for writing to log files and non-colored console output.
 class BasicFormatter(logging.Formatter):
     def __init__(self) -> None:
         super().__init__("%(asctime)s %(levelname)-8s %(name)s %(message)s")
@@ -45,7 +45,7 @@ def initialize_logging(config: ADOSConfig) -> None:
         log.disabled = True
         return
 
-    # Always output to the console when logging is enabled
+    # Always output to the console when logging is enabled.
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(ColorFormatter() if config.logging_color else BasicFormatter())
     log.addHandler(console_handler)
@@ -54,7 +54,7 @@ def initialize_logging(config: ADOSConfig) -> None:
     if config.logging_behavior == LoggingBehavior.CONSOLE_ONLY:
         return
 
-    # Path must be set when logging to a file; this is enforced for the config by pydantic
+    # Path must be set when logging to a file; this is enforced for the config by pydantic.
     assert config.logging_path is not None
 
     if config.logging_behavior == LoggingBehavior.FILE_DIRECTORY:

@@ -1,9 +1,9 @@
 import json
 import logging
 import os
+from bisect import bisect_left
 from collections import defaultdict
-from datetime import datetime
-from enum import Enum
+from datetime import datetime, timedelta
 from typing import Any, Callable, DefaultDict, NamedTuple, Optional, Self
 
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from ados.arch.messages import (
     ItemGroupsMessage,
     ItemSendMessage,
     RoomUpdateMessage,
+    SlotReleaseMessage,
 )
 from ados.arch.socket import SocketClient
 from ados.common import (
@@ -24,17 +25,13 @@ from ados.common import (
     LocationInfo,
     SentItemInfo,
     SlotInfo,
+    SubscriptionType,
 )
 from ados.config import ADOSConfig
 
 _log = logging.getLogger(__name__)
 
 REPLAY_MARKER = "REPLAY: "
-
-
-class SubscriptionType(str, Enum):
-    ITEM = "item"
-    GROUP = "group"
 
 
 class UserSlot(NamedTuple):
@@ -48,20 +45,29 @@ class SlotSubscription(NamedTuple):
     user_id: int
 
 
-# The data stored in the state file
+class SlotChecksStatus(NamedTuple):
+    self_freed: int
+    other_freed: int
+    has_released: bool
+
+
+# The data stored in the state file.
 class StateData(BaseModel):
     user_slot_ids: DefaultDict[int, set[int]] = defaultdict(set)
     slot_subscriptions: DefaultDict[int, set[SlotSubscription]] = defaultdict(set)
     slot_deaths: DefaultDict[int, int] = defaultdict(int)
+    slot_self_freed: DefaultDict[int, int] = defaultdict(int)
+    slot_other_freed: DefaultDict[int, int] = defaultdict(int)
+    slots_released: set[int] = set()
 
 
-# The data stored in the item log file
+# The data stored in the item log file.
 class ItemLogData(NamedTuple):
     slot_items: dict[int, list[SentItemInfo]] = defaultdict(list)
     user_slot_replay_index: dict[UserSlot, int] = defaultdict(int)
 
 
-# User input will match names in a case-insensitive, purely alphanumeric way
+# User input will match names in a case-insensitive, purely alphanumeric way.
 def _normalize(value: str) -> str:
     return "".join(c for c in value.lower() if c.isalnum())
 
@@ -72,7 +78,7 @@ def _normalize(value: str) -> str:
 # from the server, such as slot details and item mappings.
 class GlobalState:
 
-    # Decorator which will persist the state after the method is called
+    # Decorator which will persist the state after the method is called.
     @staticmethod
     def persist[T](func: Callable[..., T]) -> Callable[..., T]:
         def _wrapper(self: Self, *args: Any, **kwargs: Any) -> T:
@@ -97,10 +103,10 @@ class GlobalState:
         self._game_location_ids_by_name: dict[str, dict[str, int]] = {}
         self._game_groups: dict[str, set[str]] = {}
 
-        # This is the information about slot items sends
+        # This is the information about slot items sends.
         self._item_log = self._load_item_log()
 
-        # This is the data which is persisted to disk on every update
+        # This is the data which is persisted to disk on every update.
         self._state = self._load_state()
         self._save_state()
 
@@ -110,7 +116,8 @@ class GlobalState:
         socket.add_message_handler(ItemGroupsMessage, self._handle_item_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
         socket.add_message_handler(DeathLinkMessage, self._handle_death_link)
-        socket.add_message_handler(GoalReachedMessage, self._handle_goal_reached)
+        socket.add_message_handler(GoalReachedMessage, self._handle_slot_completed)
+        socket.add_message_handler(SlotReleaseMessage, self._handle_slot_completed)
 
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
     # will only affect aliases, so all IDs remain valid.
@@ -120,11 +127,11 @@ class GlobalState:
         self._slot_ids_by_name.update({_normalize(slot.alias): slot.id for slot in message.slots})
         self._slot_ids_by_name.update({_normalize(str(slot)): slot.id for slot in message.slots})
         for slot, players in self._config.slot_players.items():
-            slot_lower = _normalize(slot)
-            if slot_lower not in self._slot_ids_by_name:
+            slot_norm = _normalize(slot)
+            if slot_norm not in self._slot_ids_by_name:
                 _log.warning("Could not assign players to nonexistent slot '%s'", slot)
                 continue
-            slot_id = self._slot_ids_by_name[slot_lower]
+            slot_id = self._slot_ids_by_name[slot_norm]
             self._slot_ids_by_name.update({_normalize(player): slot_id for player in players})
         _log.info("Populated slot information for %d slots", len(message.slots))
 
@@ -153,7 +160,7 @@ class GlobalState:
             items.update(new_items)
         _log.info("Populated item groups for %d games", len(message.game_item_groups))
 
-    # Whenever an item is sent, append it to the item log both on disk and in memory
+    # Whenever an item is sent, append it to the item log both on disk and in memory.
     def _handle_item_send(self, message: ItemSendMessage) -> None:
         item = self.resolve_item(self._slots[message.to_slot_id].game, message.item_id)
         location = self.resolve_location(self._slots[message.from_slot_id].game, message.location_id)
@@ -171,15 +178,21 @@ class GlobalState:
         with open(self._item_log_file, "a") as log_file:
             log_file.write(f"{json.dumps(sent_item._asdict())}\n")  # pylint: disable = protected-access
 
+        if message.from_slot_id in self._state.slots_released or message.to_slot_id in self._state.slots_released:
+            self._record_auto_item(message.from_slot_id, message.to_slot_id)
+
     @persist
     def _handle_death_link(self, message: DeathLinkMessage) -> None:
         slot = self.resolve_slot(message.slot_name)
         self._state.slot_deaths[slot.id] += 1
 
     # Need to clear subscriptions for a slot when goal is reached so that users aren't spammed with item
-    # sends from all the released locations. Also clear from users' registered slots
+    # sends from all the released locations. Also clear from users' registered slots.
     @persist
-    def _handle_goal_reached(self, message: GoalReachedMessage) -> None:
+    def _handle_slot_completed(self, message: GoalReachedMessage | SlotReleaseMessage) -> None:
+        if message.slot_id in self._state.slots_released:
+            return
+        self._state.slots_released.add(message.slot_id)
         if message.slot_id in self._state.slot_subscriptions:
             self._state.slot_subscriptions.pop(message.slot_id)
         for user_id in list(self._state.user_slot_ids.keys()):
@@ -187,6 +200,23 @@ class GlobalState:
                 self._state.user_slot_ids[user_id].remove(message.slot_id)
                 if not self._state.user_slot_ids[user_id]:
                     self._state.user_slot_ids.pop(user_id)
+
+    # Alan releases all
+
+    # Alan sends *** to Beth
+    # This was an item Alan held onto until completion, should be "Self Freed" for Alan
+
+    # Beth sends *** to Alan
+    # This was an item Beth had forcibly freed, should be "Other Freed" for Beth
+
+    # After a slot has its items mass-released, we want to record the counts of item sends separately
+    # for stat reporting purposes.
+    @persist
+    def _record_auto_item(self, from_slot_id: int, to_slot_id: int) -> None:
+        if from_slot_id in self._state.slots_released:
+            self._state.slot_self_freed[from_slot_id] += 1
+        if to_slot_id in self._state.slots_released:
+            self._state.slot_other_freed[from_slot_id] += 1
 
     def _load_item_log(self) -> ItemLogData:
         data = ItemLogData()
@@ -197,7 +227,7 @@ class GlobalState:
         with open(self._item_log_file, "r") as log_file:
             for line in log_file:
                 if line.startswith(REPLAY_MARKER):
-                    # This line indicates a replay occurred for the given user and slot ID
+                    # This line indicates a replay occurred for the given user and slot ID.
                     user_slot = UserSlot(**json.loads(line.replace(REPLAY_MARKER, "").strip()))
                     data.user_slot_replay_index[user_slot] = len(data.slot_items[user_slot.slot_id])
                 else:
@@ -212,7 +242,7 @@ class GlobalState:
             data_file.write(self._state.model_dump_json(indent=4))
 
     def _load_state(self) -> StateData:
-        # If the file doesn't exist, return a fresh state
+        # If the file doesn't exist, return a fresh state.
         if not os.path.exists(self._state_file):
             _log.info("State file '%s' does not exist; starting fresh", self._state_file)
             return StateData()
@@ -223,7 +253,7 @@ class GlobalState:
                 return StateData(**json.load(data_file))
         except Exception as ex:
             # If there's a validation (or other) error, back up the invalid file so it can be
-            # inspected later, then start fresh
+            # inspected later, then start fresh.
             _log.error("Failed to load state file '%s': %s", self._state_file, ex)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_state_file = self._state_file.replace(".json", "")
@@ -248,15 +278,15 @@ class GlobalState:
                 raise ADOSError(f"Slot ID {value} does not exist in the multiworld")
             return self._slots[value]
 
-        value_lower = _normalize(value)
-        if value_lower not in self._slot_ids_by_name:
+        value_norm = _normalize(value)
+        if value_norm not in self._slot_ids_by_name:
             raise ADOSError(f"Slot `{value}` does not exist in the multiworld")
-        return self._slots[self._slot_ids_by_name[value_lower]]
+        return self._slots[self._slot_ids_by_name[value_norm]]
 
     def resolve_group(self, game: str, group: str) -> str:
-        group_lower = _normalize(group)
+        group_norm = _normalize(group)
         for game_group in self._game_groups.get(game, set()):
-            if _normalize(game_group) == group_lower:
+            if _normalize(game_group) == group_norm:
                 return game_group
         raise ADOSError(f"Group `{group}` does not exist in game `{game}`")
 
@@ -266,17 +296,17 @@ class GlobalState:
                 raise ADOSError(f"Item ID {value} does not exist in game `{game}`")
             return self._game_items[game][value]
 
-        value_lower = _normalize(value)
-        if value_lower not in self._game_item_ids_by_name.get(game, {}):
+        value_norm = _normalize(value)
+        if value_norm not in self._game_item_ids_by_name.get(game, {}):
             raise ADOSError(f"Item `{value}` does not exist in game `{game}`")
-        item_id = self._game_item_ids_by_name[game][value_lower]
+        item_id = self._game_item_ids_by_name[game][value_norm]
         return self._game_items[game][item_id]
 
     def search_items(self, game: str, search_text: str) -> list[ItemInfo]:
-        search_text_lower = search_text.lower()
+        search_text_norm = _normalize(search_text)
         matching_items: list[ItemInfo] = []
         for item in self._game_items.get(game, {}).values():
-            if search_text_lower in item.name.lower():
+            if search_text_norm in _normalize(item.name):
                 matching_items.append(item)
         return matching_items
 
@@ -286,14 +316,32 @@ class GlobalState:
                 raise ADOSError(f"Location ID {value} does not exist in game `{game}`")
             return self._game_locations[game][value]
 
-        value_lower = _normalize(value)
-        if value_lower not in self._game_location_ids_by_name.get(game, {}):
+        value_norm = _normalize(value)
+        if value_norm not in self._game_location_ids_by_name.get(game, {}):
             raise ADOSError(f"Location `{value}` does not exist in game `{game}`")
-        location_id = self._game_location_ids_by_name[game][value_lower]
+        location_id = self._game_location_ids_by_name[game][value_norm]
         return self._game_locations[game][location_id]
+
+    def search_locations(self, game: str, search_text: str) -> list[LocationInfo]:
+        search_text_norm = _normalize(search_text)
+        matching_locations: list[LocationInfo] = []
+        for location in self._game_locations.get(game, {}).values():
+            if search_text_norm in _normalize(location.name):
+                matching_locations.append(location)
+        return matching_locations
 
     def death_counts(self) -> dict[SlotInfo, int]:
         return {self._slots[slot_id]: count for slot_id, count in self._state.slot_deaths.items()}
+
+    def slot_checks_statuses(self) -> dict[SlotInfo, SlotChecksStatus]:
+        return {
+            slot: SlotChecksStatus(
+                self_freed=self._state.slot_self_freed.get(slot_id, 0),
+                other_freed=self._state.slot_other_freed.get(slot_id, 0),
+                has_released=(slot_id in self._state.slots_released),
+            )
+            for slot_id, slot in self._slots.items()
+        }
 
     ################################################
     ############## SLOT REGISTRATIONS ##############
@@ -336,8 +384,13 @@ class GlobalState:
             log_file.write(f"{REPLAY_MARKER}{json.dumps(user_slot._asdict())}\n")  # pylint: disable = protected-access
         return recent_items
 
-    def get_all_items(self, slot: SlotInfo) -> list[SentItemInfo]:
-        return self._item_log.slot_items[slot.id]
+    def get_all_items(self, slot: SlotInfo, *, since: Optional[timedelta] = None) -> list[SentItemInfo]:
+        all_items = self._item_log.slot_items[slot.id]
+        if since is None:
+            return all_items
+        replay_time = (datetime.now() - since).timestamp()
+        replay_index = bisect_left(all_items, replay_time, key=lambda item: item.timestamp)
+        return all_items[replay_index:]
 
     ################################################
     ################ SUBSCRIPTIONS #################
@@ -377,7 +430,7 @@ class GlobalState:
 
     @persist
     def remove_user_subscription(self, user_id: int, slot: Optional[SlotInfo], value: str) -> None:
-        value_lower = _normalize(value)
+        value_norm = _normalize(value)
         to_check_slots = [slot] if slot is not None else self.get_user_slots(user_id)
         for to_check_slot in to_check_slots:
             subscriptions = self._state.slot_subscriptions.get(to_check_slot.id, set())
@@ -386,5 +439,5 @@ class GlobalState:
             self._state.slot_subscriptions[to_check_slot.id] = {
                 subscription
                 for subscription in subscriptions
-                if not (subscription.user_id == user_id and value_lower in _normalize(subscription.value))
+                if not (subscription.user_id == user_id and value_norm in _normalize(subscription.value))
             }

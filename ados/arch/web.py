@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import NamedTuple, Optional
+from typing import Optional
 
 from aiohttp import ClientSession, ClientTimeout
 
@@ -13,17 +13,6 @@ BASE_URL = "archipelago.gg"
 
 TRACKER_REGEX = re.compile(r"This room has a <a href=\"/tracker/(.*)\">Multiworld Tracker</a>")
 PORT_REGEX = re.compile(r"running on archipelago.gg with port (\d*)")
-SLOT_ID_REGEX = re.compile(r"^\s*\d+\s*$")
-COMPLETION_REGEX = re.compile(r"^\s*\d+/\d+\s*$")
-
-CHECK_START_SENTINEL = "This tracker will automatically update itself"
-CHECK_END_SENTINEL = "<td>All Games</td>"
-
-
-class CheckCounts(NamedTuple):
-    found: int
-    total: int
-    percent: float
 
 
 # Provides access to the data served by the Archipelago web interface. Stores a cached
@@ -69,34 +58,3 @@ class WebClient:
                 self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
 
         _log.info("Completed web information refresh; server is running at '%s'", self.server_url)
-
-    async def fetch_slot_check_counts(self) -> dict[int, CheckCounts]:
-
-        check_counts: dict[int, CheckCounts] = {}
-        _log.info("Fetching slot check completion info from tracker at '%s'", self.tracker_url)
-
-        async with ClientSession(timeout=ClientTimeout(5)) as http_session:
-            async with http_session.get(self.tracker_url) as http_ret:
-                if not http_ret.ok:
-                    raise ADOSError(f"Failed to access tracker at '{self.tracker_url}' (status code {http_ret.status})")
-
-                next_slot_id: Optional[int] = -1
-                async for line in http_ret.content:
-                    line_text = line.decode()
-                    if CHECK_START_SENTINEL in line_text:
-                        next_slot_id = None
-                        continue
-                    if CHECK_END_SENTINEL in line_text:
-                        break
-
-                    if re.match(SLOT_ID_REGEX, line_text):
-                        next_slot_id = int(line_text.strip())
-                    elif re.match(COMPLETION_REGEX, line_text) and next_slot_id is not None:
-                        found_str, total_str = line_text.strip().split("/")
-                        found, total = int(found_str), int(total_str)
-                        percent = (found / total * 100) if total > 0 else 0
-                        check_counts[next_slot_id] = CheckCounts(found, total, percent)
-                        next_slot_id = None
-
-        _log.info("Completed fetching slot check completion info")
-        return check_counts

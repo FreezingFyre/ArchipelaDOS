@@ -36,7 +36,7 @@ class ADOSBot(commands.Bot):
         help_command = HelpCommand()  # type: ignore[no-untyped-call]
         super().__init__(command_prefix=COMMAND_PREFIX, intents=intents, help_command=help_command)
 
-        # Guild and channel IDs start unset, and are populated in on_ready()
+        # Guild and channel IDs start unset, and are populated in on_ready().
         self._connected = False
         self._config = config
         self._guild: Optional[discord.Guild] = None
@@ -155,7 +155,7 @@ class ADOSBot(commands.Bot):
                 for channel in self._guild.text_channels:
                     if channel.name in self._config.discord_broadcast_channels:
                         await channel.send(
-                            f":red_circle:  *Lost connection to Archipelago server. Use {COMMAND_PREFIX}refresh to attempt a reconnect.*"
+                            f":red_circle:  *Lost connection to Archipelago server. Use {COMMAND_PREFIX}room refresh to attempt a reconnect.*"
                         )
 
         asyncio.create_task(_reconnect_task())

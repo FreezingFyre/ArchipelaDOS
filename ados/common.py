@@ -45,7 +45,13 @@ class ItemCategoryFilter(str, Enum):
         return False
 
 
-# Possible statuses of a hint, as per the Archipelago spec
+# Type of a subscription registered by the user for a slot.
+class SubscriptionType(str, Enum):
+    ITEM = "item"
+    GROUP = "group"
+
+
+# Possible statuses of a hint, as per the Archipelago spec.
 class HintStatus(int, Enum):
     UNSPECIFIED = 0
     UNNEEDED = 10
@@ -109,3 +115,14 @@ class HintInfo(NamedTuple):
     from_slot_id: int
     found: bool
     status: HintStatus
+
+
+# Encodes the full (relevant) status of a slot, including checks that were checked
+# in various categories as well as whether the slot is finished.
+class FullSlotStatus(NamedTuple):
+    found_checks: int
+    total_checks: int
+    self_freed_checks: int
+    other_freed_checks: int
+    goal_completed: bool
+    has_released: bool

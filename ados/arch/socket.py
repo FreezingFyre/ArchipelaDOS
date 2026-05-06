@@ -39,7 +39,8 @@ class SocketClient:
         self._slot_name = slot_name
 
         self._handlers: dict[type[ServerMessage], list[Callable[[Any], None]]] = defaultdict(list)
-        self._request_futures: dict[type[ServerMessage], list[asyncio.Future[Any]]] = defaultdict(list)
+        self._request_locks: dict[type[ServerMessage], asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._request_futures: dict[type[ServerMessage], asyncio.Future[Any]] = {}
 
         self._socket: Optional[ClientConnection] = None
         self._socket_task: Optional[asyncio.Task[None]] = None
@@ -72,20 +73,27 @@ class SocketClient:
     # response asynchronously. This function allows sending a message and waiting for a
     # particular response.
     async def perform_request[T: ServerMessage](self, response_type: type[T], message: str) -> T:
-        assert self._socket is not None
-        future: asyncio.Future[T] = asyncio.get_running_loop().create_future()
-        self._request_futures[cast(type[ServerMessage], response_type)].append(future)
-        await self._socket.send(message)
-        try:
-            return await asyncio.wait_for(future, timeout=10)
-        except asyncio.TimeoutError as ex:
-            _log.warning(
-                "Timed out waiting for response from server at '%s' of type '%s' for message '%s'",
-                self._server_url,
-                response_type,
-                message,
-            )
-            raise ADOSError(f"Timed out waiting for response from server of type '{response_type}'") from ex
+        if self._socket is None:
+            raise ADOSError("Attempted request while socket is disconnected")
+
+        # Only allow one request per type at a given time, so responses aren't misattributed.
+        async with self._request_locks[cast(type[ServerMessage], response_type)]:
+            future: asyncio.Future[T] = asyncio.get_running_loop().create_future()
+            self._request_futures[cast(type[ServerMessage], response_type)] = future
+            await self._socket.send(message)
+
+            try:
+                return await asyncio.wait_for(future, timeout=10)
+            except asyncio.TimeoutError as ex:
+                if cast(type[ServerMessage], response_type) in self._request_futures:
+                    self._request_futures.pop(cast(type[ServerMessage], response_type)).cancel()
+                _log.warning(
+                    "Timed out waiting for response from server at '%s' of type '%s' for message '%s'",
+                    self._server_url,
+                    response_type,
+                    message,
+                )
+                raise ADOSError(f"Timed out waiting for response from server of type '{response_type}'") from ex
 
     async def _initialize_connection(self, server_url: str, fetch_data: bool) -> ClientConnection:
         # The Archipelago handshake consists of:
@@ -142,7 +150,7 @@ class SocketClient:
         assert self._socket is not None
         try:
             async for socket_message in self._socket:
-                _log.info("Received socket message for slot '%s': %s", self._slot_name, socket_message)
+                _log.info("Received socket message for slot '%s': %s", self._slot_name, socket_message[:2048])
                 for message in deserialize(socket_message):
                     self._handle_message(message)
         except ConnectionClosedError as ex:
@@ -164,6 +172,5 @@ class SocketClient:
                 handler(message)
             except Exception as ex:
                 _log.warning("Exception occurred while calling message handler for %s - %s", type(message).__name__, ex)
-        if self._request_futures.get(type(message), []):
-            future = self._request_futures[type(message)].pop(0)
-            future.set_result(message)
+        if type(message) in self._request_futures:
+            self._request_futures.pop(type(message)).set_result(message)

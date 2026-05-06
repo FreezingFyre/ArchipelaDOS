@@ -1,33 +1,35 @@
 import asyncio
-import io
 import logging
 import random
+import re
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, cast
 
-import discord
-import matplotlib.pyplot as plt
 from discord.ext import commands
 from discord.ext.commands.errors import UserInputError
 
 from ados.arch.messages import (
     HintPointsMessage,
     HintsMessage,
+    StatusMessage,
     get_hint_item_message,
     get_hint_location_message,
     get_hint_message,
+    get_status_message,
 )
 from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import (
     ADOSError,
+    FullSlotStatus,
     HintInfo,
     ItemCategoryFilter,
     ItemInfo,
     LocationInfo,
     SentItemInfo,
     SlotInfo,
+    SubscriptionType,
     join_objects,
 )
 from ados.config import ADOSConfig
@@ -38,7 +40,13 @@ from ados.discord.common import (
     send_success,
     send_table,
 )
-from ados.state import GlobalState, SubscriptionType
+from ados.discord.plotting import (
+    send_checks_graph,
+    send_checks_table,
+    send_deaths_graph,
+    send_deaths_table,
+)
+from ados.state import GlobalState
 
 _log = logging.getLogger(__name__)
 
@@ -73,6 +81,21 @@ class StringArg(commands.Converter[str]):
         return argument
 
 
+class TimeDeltaArg(commands.Converter[timedelta]):
+    async def convert(self, ctx: BotContext, argument: str) -> timedelta:  # pylint: disable = unused-argument
+        argument = argument.lower()
+
+        def _extract_count(unit: str) -> float:
+            match = re.search(rf"([\d\.]+)\s*{unit}", argument)
+            return float(match.group(1)) if match else 0
+
+        delta_days = _extract_count("d")
+        delta_hours = _extract_count("h")
+        delta_minutes = _extract_count("m")
+        delta_seconds = _extract_count("s")
+        return timedelta(days=delta_days, hours=delta_hours, minutes=delta_minutes, seconds=delta_seconds)
+
+
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     def __init__(self, config: ADOSConfig, web: WebClient, socket: SocketClient, state: GlobalState):
@@ -85,6 +108,10 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         self._slot_sockets: dict[SlotInfo, tuple[datetime, SocketClient]] = {}
         self._sockets_cleanup_task = asyncio.create_task(self._sockets_cleanup_loop())
 
+    # For hint commands, a socket needs to be created that will connect to the Archipelago server as
+    # that slot. We do not want a connection perpetually open for every slot, but we also want repeated
+    # hint commands to not necessarily suffer the cost of connecting to the server every time. So slot-
+    # specific sockets are created when needed, and cleaned up after a period of inactivity.
     async def _get_slot_socket(self, slot: SlotInfo) -> SocketClient:
         if slot in self._slot_sockets:
             socket = self._slot_sockets[slot][1]
@@ -95,6 +122,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         self._slot_sockets[slot] = (datetime.now(), socket)
         return socket
 
+    # Socket cleanup logic runs on a regular cadence, defined by the SOCKET_CLEANUP variables.
     async def _sockets_cleanup_loop(self) -> None:
 
         async def _cleanup_job() -> None:
@@ -112,7 +140,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                     asyncio.sleep(SOCKET_CLEANUP_INTERVAL.total_seconds()),
                 )
             except Exception as ex:
-                _log.error("Error during thread cleanup: %s", str(ex))
+                _log.error("Error during socket cleanup: %s", str(ex))
 
     def _resolve_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
         if flag_slot is not None:
@@ -164,8 +192,29 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def threadme(self, ctx: BotContext) -> None:
         await send_message(ctx, random.choice(Commands.GREETINGS), reply=True)
 
-    @commands.command(name="refresh", help="Refresh the room on archipelago.gg", ignore_extra=False)
-    async def refresh(self, ctx: BotContext) -> None:
+    ################################################
+    ########### ROOM MANAGEMENT COMMANDS ###########
+    ################################################
+
+    @commands.group(name="room", help="Interact with the room", invoke_without_command=True)  # type: ignore[arg-type]
+    async def room(self, ctx: BotContext) -> None:
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}room`")
+
+    @room.command(name="info", help="Get information about the Archipelago room", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
+    async def room_info(self, ctx: BotContext) -> None:
+        port = self._web.server_url.split(":")[-1]
+        slot_names_joined = join_objects(self._state.all_slots())
+        message = [
+            "Room information:",
+            f"- Port: {port}",
+            f"- Room URL: <{self._web.room_url}>",
+            f"- Tracker URL: <{self._web.tracker_url}>",
+            f"- Available slots: {slot_names_joined}",
+        ]
+        await send_message(ctx, "\n".join(message))
+
+    @room.command(name="refresh", help="Refresh the room on archipelago.gg, reconnecting the bot if it got disconnected", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    async def room_refresh(self, ctx: BotContext) -> None:
         await self._web.refresh()
         await self._socket.connect(self._web.server_url, fetch_data=False)
         await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
@@ -177,21 +226,28 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     class SlotFlags(commands.FlagConverter):
         slot: SlotInfoArg = commands.flag(positional=True)
 
-    @commands.group(name="slot", help="Manage slot registrations", invoke_without_command=True)  # type: ignore[arg-type]
+    class SlotFlagsOptional(commands.FlagConverter):
+        slot: Optional[SlotInfoArg] = commands.flag(positional=True, default=None)
+
+    class SlotFlagsValue(commands.FlagConverter):
+        value: StringArg = commands.flag(positional=True)
+        slot: Optional[SlotInfoArg] = None
+
+    @commands.group(name="slot", help="Manage slot registrations and info", invoke_without_command=True)  # type: ignore[arg-type]
     async def slot(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}slot`")
 
-    @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False)  # type: ignore[arg-type]
+    @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         self._state.add_user_slot(ctx.author.id, flags.slot)
         await send_success(ctx, f"You have been registered for slot `{flags.slot}`")
 
-    @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False)  # type: ignore[arg-type]
+    @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def slot_remove(self, ctx: BotContext, *, flags: SlotFlags) -> None:
         self._state.remove_user_slot(ctx.author.id, flags.slot)
         await send_success(ctx, f"You have been unregistered from slot `{flags.slot}`")
 
-    @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False)  # type: ignore[arg-type]
+    @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def slot_list(self, ctx: BotContext) -> None:
         slots = self._state.get_user_slots(ctx.author.id)
         if not slots:
@@ -200,10 +256,53 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_names_joined = join_objects(slots)
             await send_message(ctx, f"You are registered for the following slots: {slot_names_joined}")
 
-    @slot.command(name="clear", help="Clears your registration for all slots", ignore_extra=False)  # type: ignore[arg-type]
+    @slot.command(name="clear", help="Clears your registration for all slots", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def slot_clear(self, ctx: BotContext) -> None:
         self._state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
+
+    @slot.command(name="info", help="Get information about your registered slots (can filter by slot)", ignore_extra=False, extras={"ord": 5})  # type: ignore[arg-type]
+    async def slot_info(self, ctx: BotContext, *, flags: SlotFlagsOptional) -> None:
+        slots = self._resolve_slots(ctx, flags.slot)
+        message = []
+        for slot in slots:
+            groups_joined = join_objects(self._state.all_groups(slot.game))
+            message.append(
+                "\n".join(
+                    [
+                        f"Slot information for `{slot}`:",
+                        f"- Game: `{slot.game}`",
+                        f"- Item groups: {groups_joined}",
+                    ]
+                )
+            )
+        await send_message(ctx, "\n\n".join(message))
+
+    @slot.command(name="search", help="Search for items/locations in your regsitered slots containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 6})  # type: ignore[arg-type]
+    async def slot_search(self, ctx: BotContext, *, flags: SlotFlagsValue) -> None:
+        slots = self._resolve_slots(ctx, flags.slot)
+        slot_items = {slot: self._state.search_items(slot.game, cast(str, flags.value)) for slot in slots}
+        slot_items = {slot: items for slot, items in slot_items.items() if items}
+        slot_locations = {slot: self._state.search_locations(slot.game, cast(str, flags.value)) for slot in slots}
+        slot_locations = {slot: locations for slot, locations in slot_locations.items() if locations}
+
+        if not slot_items and not slot_locations:
+            await send_message(ctx, f"No items or locations found matching `{flags.value}`")
+            return
+        if slot_items:
+            table_items: dict[str, list[str]] = {"Slot": [], "Item": []}
+            for slot, items in slot_items.items():
+                for item in sorted(items, key=lambda x: x.name):
+                    table_items["Slot"].append(str(slot))
+                    table_items["Item"].append(item.name)
+            await send_table(ctx, table_items, reply=True)
+        if slot_locations:
+            table_locations: dict[str, list[str]] = {"Slot": [], "Location": []}
+            for slot, locations in slot_locations.items():
+                for location in sorted(locations, key=lambda x: x.name):
+                    table_locations["Slot"].append(str(slot))
+                    table_locations["Location"].append(location.name)
+            await send_table(ctx, table_locations, reply=True)
 
     ################################################
     ######### NOTIFICATION REPLAY COMMANDS #########
@@ -212,26 +311,31 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     class ReplayFlags(commands.FlagConverter):
         filter: ItemCategoryFilter = commands.flag(positional=True, default=ItemCategoryFilter.USEFUL)
         slot: Optional[SlotInfoArg] = None
+        since: Optional[TimeDeltaArg] = None
 
     @commands.group(name="replay", help="View previously received items for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
     async def replay(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}replay`")
 
-    @replay.command(name="new", help="Replay items received since last call (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
+    @replay.command(name="new", help="Replay items received since last call (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def replay_new(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
-        slots = await self._resolve_replay_slots(ctx, flags.slot)
+        slots = self._resolve_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
         for slot in slots:
+            # We always call get_new_items() to trigger the saving of replay position, but we disregard the
+            # resulting list if the "since" flag was set.
             items = self._state.get_new_items(ctx.author.id, slot)
+            if flags.since is not None:
+                items = self._state.get_all_items(slot, since=cast(Optional[timedelta], flags.since))
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
-    @replay.command(name="full", help="Replay all items recieved since game start (can filter by slot/item level)", ignore_extra=False)  # type: ignore[arg-type]
+    @replay.command(name="full", help="Replay all items recieved since game start (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def replay_full(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
-        slots = await self._resolve_replay_slots(ctx, flags.slot)
+        slots = self._resolve_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
         for slot in slots:
-            items = self._state.get_all_items(slot)
+            items = self._state.get_all_items(slot, since=cast(Optional[timedelta], flags.since))
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
@@ -241,16 +345,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     def _filter_items(self, items: list[SentItemInfo], flags: ReplayFlags) -> list[SentItemInfo]:
         return [item for item in items if flags.filter.check(item.category)]
-
-    async def _resolve_replay_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
-        if flag_slot is not None:
-            assert isinstance(flag_slot, SlotInfo)
-            slots: list[SlotInfo] = [flag_slot]
-        else:
-            slots = self._state.get_user_slots(ctx.author.id)
-        if not slots:
-            await send_message(ctx, "You are not registered for any slots", reply=True)
-        return slots
 
     async def _send_replay_items(self, ctx: BotContext, slot_items: dict[SlotInfo, list[SentItemInfo]]) -> None:
         for slot, items in slot_items.items():
@@ -264,117 +358,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                 table["Item"].append(item.item_name)
                 table["Sender"].append(self._state.resolve_slot(item.from_slot_id).name)
                 table["Location"].append(item.location_name)
-            await send_table(ctx, table, reply=True)
-
-    ################################################
-    ################ HINT COMMANDS #################
-    ################################################
-
-    class HintFlags(commands.FlagConverter):
-        slot: Optional[SlotInfoArg] = commands.flag(positional=True, default=None)
-
-    class HintFlagsItem(commands.FlagConverter):
-        item: StringArg = commands.flag(positional=True)
-        slot: Optional[SlotInfoArg] = None
-
-    class HintFlagsLocation(commands.FlagConverter):
-        location: StringArg = commands.flag(positional=True)
-        slot: Optional[SlotInfoArg] = None
-
-    @commands.group(name="hint", help="View and use hints for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
-    async def hint(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}hint`")
-
-    @hint.command(name="points", help="Show hint points (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_points(self, ctx: BotContext, *, flags: HintFlags) -> None:
-        async def _fetch_points_for_slot(slot: SlotInfo) -> HintPointsMessage:
-            socket = await self._get_slot_socket(slot)
-            return await socket.perform_request(HintPointsMessage, get_hint_message())
-
-        slots = self._resolve_slots(ctx, flags.slot)
-        hint_tasks = {slot: _fetch_points_for_slot(slot) for slot in slots}
-        message: list[str] = []
-        for slot, task in sorted(hint_tasks.items(), key=lambda pair: pair[0].name):
-            hint_points = await task
-            message.append(
-                f"- `{slot}`: {hint_points.points_available} points available ({hint_points.points_required} required)"
-            )
-        await send_message(ctx, "\n".join(message), reply=True)
-
-    @hint.command(name="item", help="Use a hint for the given item (can filter by slot if needed)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_item(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
-        item: Optional[ItemInfo] = None
-        matching_slots: list[SlotInfo] = []
-        slots = self._resolve_slots(ctx, flags.slot)
-        for slot in slots:
-            try:
-                item = self._state.resolve_item(slot.game, cast(str, flags.item))
-                matching_slots.append(slot)
-            except ADOSError:
-                continue
-        if not matching_slots or item is None:
-            raise ADOSError(f"Item `{flags.item}` does not exist in the searched slots")
-        if len(matching_slots) != 1:
-            raise ADOSError(f"Item `{flags.item}` exists in multiple slots; please specify one to hint")
-
-        socket = await self._get_slot_socket(matching_slots[0])
-        hints = (await socket.perform_request(HintsMessage, get_hint_item_message(item.name))).hints
-        await self._send_hints(ctx, hints)
-
-    @hint.command(name="location", help="Use a hint for the given location (can filter by slot if needed)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_location(self, ctx: BotContext, *, flags: HintFlagsLocation) -> None:
-        location: Optional[LocationInfo] = None
-        matching_slots: list[SlotInfo] = []
-        slots = self._resolve_slots(ctx, flags.slot)
-        for slot in slots:
-            try:
-                location = self._state.resolve_location(slot.game, cast(str, flags.location))
-                matching_slots.append(slot)
-            except ADOSError:
-                continue
-        if not matching_slots or location is None:
-            raise ADOSError(f"Location `{flags.location}` does not exist in the searched slots")
-        if len(matching_slots) != 1:
-            raise ADOSError(f"Location `{flags.location}` exists in multiple slots; please specify one to hint")
-
-        socket = await self._get_slot_socket(matching_slots[0])
-        hints = (await socket.perform_request(HintsMessage, get_hint_location_message(location.name))).hints
-        await self._send_hints(ctx, hints)
-
-    @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def hint_list(self, ctx: BotContext, *, flags: HintFlags) -> None:
-        async def _fetch_hints_for_slot(slot: SlotInfo) -> HintsMessage:
-            socket = await self._get_slot_socket(slot)
-            return await socket.perform_request(HintsMessage, get_hint_message())
-
-        slots = self._resolve_slots(ctx, flags.slot)
-        hint_tasks = [_fetch_hints_for_slot(slot) for slot in slots]
-        hints: list[HintInfo] = []
-        for task in hint_tasks:
-            hints.extend((await task).hints)
-        await self._send_hints(ctx, [hint for hint in hints if not hint.found])
-
-    async def _send_hints(self, ctx: BotContext, hints: list[HintInfo]) -> None:
-        if not hints:
-            await send_message(ctx, "There are no hints available for the selected slots", reply=True)
-            return
-
-        table: dict[str, list[str]] = {"Hinter": [], "Item": [], "Holder": [], "Location": [], "Status": []}
-        for hint in hints:
-            to_slot = self._state.resolve_slot(hint.to_slot_id)
-            from_slot = self._state.resolve_slot(hint.from_slot_id)
-            table["Hinter"].append(str(to_slot))
-            table["Item"].append(str(self._state.resolve_item(to_slot.game, hint.item_id)))
-            table["Holder"].append(str(from_slot))
-            table["Location"].append(str(self._state.resolve_location(from_slot.game, hint.location_id)))
-            table["Status"].append(hint.status.name.lower())
-
-        if len(hints) == 1:
-            self_slot, item, other_slot, location, status = (column[0] for column in table.values())
-            await send_message(
-                ctx, f"`{self_slot}`'s `{item}` is at `{location}` in `{other_slot}`'s world ({status})", reply=True
-            )
-        else:
             await send_table(ctx, table, reply=True)
 
     ################################################
@@ -400,7 +383,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def subscribe(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}subscribe`")
 
-    @subscribe.command(name="item", help="Subscribes you for the given item (can filter by slot if needed)", ignore_extra=False)  # type: ignore[arg-type]
+    @subscribe.command(name="item", help="Subscribes you for the given item (can filter by slot if needed)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def subscribe_item(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
         item: Optional[ItemInfo] = None
         matching_slots: list[SlotInfo] = []
@@ -418,7 +401,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slot_names_joined = join_objects(matching_slots)
         await send_success(ctx, f"You have subscribed to item `{item.name}` in: {slot_names_joined}")
 
-    @subscribe.command(name="group", help="Subscribes you for the given item group (can filter by slot if needed)", ignore_extra=False)  # type: ignore[arg-type]
+    @subscribe.command(name="group", help="Subscribes you for the given group (can filter by slot if needed)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def subscribe_group(self, ctx: BotContext, *, flags: SubscribeFlagsGroup) -> None:
         group: Optional[str] = None
         matching_slots: list[SlotInfo] = []
@@ -436,7 +419,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slot_names_joined = join_objects(matching_slots)
         await send_success(ctx, f"You have subscribed to item group `{group}` in: {slot_names_joined}")
 
-    @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsValue) -> None:
         self._state.remove_user_subscription(ctx.author.id, flags.slot, flags.value)
         await send_success(ctx, f"You have removed items/group subscriptions matching `{flags.value}`")
@@ -455,136 +438,154 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                     table["Value"].append(subscription.value)
             await send_table(ctx, table)
 
-    @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
         self._state.remove_user_subscription(ctx.author.id, flags.slot, "")
         await send_success(ctx, "You have cleared your item/group subscriptions")
 
     ################################################
-    ############ INFO QUERYING COMMANDS ############
+    ################ HINT COMMANDS #################
     ################################################
 
-    class InfoFlags(commands.FlagConverter):
+    class HintFlags(commands.FlagConverter):
         slot: Optional[SlotInfoArg] = commands.flag(positional=True, default=None)
 
-    class InfoFlagsValue(commands.FlagConverter):
-        value: StringArg = commands.flag(positional=True)
+    class HintFlagsItem(commands.FlagConverter):
+        item: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
 
-    @commands.group(name="info", help="Query for information about the multiworld, slots, or items", invoke_without_command=True)  # type: ignore[arg-type]
-    async def info(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}info`")
+    class HintFlagsLocation(commands.FlagConverter):
+        location: StringArg = commands.flag(positional=True)
+        slot: Optional[SlotInfoArg] = None
 
-    @info.command(name="room", help="Get information about the Archipelago room", ignore_extra=False)  # type: ignore[arg-type]
-    async def info_room(self, ctx: BotContext) -> None:
-        port = self._web.server_url.split(":")[-1]
-        slot_names_joined = join_objects(self._state.all_slots())
-        message = [
-            "Room information:",
-            f"- Port: {port}",
-            f"- Room URL: <{self._web.room_url}>",
-            f"- Tracker URL: <{self._web.tracker_url}>",
-            f"- Available slots: {slot_names_joined}",
-        ]
-        await send_message(ctx, "\n".join(message))
+    @commands.group(name="hint", help="View and use hints for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
+    async def hint(self, ctx: BotContext) -> None:
+        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}hint`")
 
-    @info.command(name="slot", help="Get information about your registered slots (or a specified slot)", ignore_extra=False)  # type: ignore[arg-type]
-    async def info_slot(self, ctx: BotContext, *, flags: InfoFlags) -> None:
-        slots = self._state.get_user_slots(ctx.author.id) if flags.slot is None else [cast(SlotInfo, flags.slot)]
-        message = []
+    @hint.command(name="item", help="Use a hint for the given item (can filter by slot if needed)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
+    async def hint_item(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
+        item: Optional[ItemInfo] = None
+        matching_slots: list[SlotInfo] = []
+        slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
-            groups_joined = join_objects(self._state.all_groups(slot.game))
+            try:
+                item = self._state.resolve_item(slot.game, cast(str, flags.item))
+                matching_slots.append(slot)
+            except ADOSError:
+                continue
+        if not matching_slots or item is None:
+            raise ADOSError(f"Item `{flags.item}` does not exist in the searched slots")
+        if len(matching_slots) != 1:
+            raise ADOSError(f"Item `{flags.item}` exists in multiple slots; please specify one to hint")
+
+        socket = await self._get_slot_socket(matching_slots[0])
+        hints = (await socket.perform_request(HintsMessage, get_hint_item_message(item.name))).hints
+        await self._send_hints(ctx, hints)
+
+    @hint.command(name="location", help="Use a hint to see what is at the given location (can filter by slot if needed)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    async def hint_location(self, ctx: BotContext, *, flags: HintFlagsLocation) -> None:
+        location: Optional[LocationInfo] = None
+        matching_slots: list[SlotInfo] = []
+        slots = self._resolve_slots(ctx, flags.slot)
+        for slot in slots:
+            try:
+                location = self._state.resolve_location(slot.game, cast(str, flags.location))
+                matching_slots.append(slot)
+            except ADOSError:
+                continue
+        if not matching_slots or location is None:
+            raise ADOSError(f"Location `{flags.location}` does not exist in the searched slots")
+        if len(matching_slots) != 1:
+            raise ADOSError(f"Location `{flags.location}` exists in multiple slots; please specify one to hint")
+
+        socket = await self._get_slot_socket(matching_slots[0])
+        hints = (await socket.perform_request(HintsMessage, get_hint_location_message(location.name))).hints
+        await self._send_hints(ctx, hints)
+
+    @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
+    async def hint_list(self, ctx: BotContext, *, flags: HintFlags) -> None:
+        async def _fetch_hints_for_slot(slot: SlotInfo) -> HintsMessage:
+            socket = await self._get_slot_socket(slot)
+            return await socket.perform_request(HintsMessage, get_hint_message())
+
+        slots = self._resolve_slots(ctx, flags.slot)
+        hint_tasks = [_fetch_hints_for_slot(slot) for slot in slots]
+        hints: list[HintInfo] = []
+        for task in hint_tasks:
+            hints.extend((await task).hints)
+        await self._send_hints(ctx, [hint for hint in hints if not hint.found])
+
+    @hint.command(name="points", help="Show hint points held and needed (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
+    async def hint_points(self, ctx: BotContext, *, flags: HintFlags) -> None:
+        async def _fetch_points_for_slot(slot: SlotInfo) -> HintPointsMessage:
+            socket = await self._get_slot_socket(slot)
+            return await socket.perform_request(HintPointsMessage, get_hint_message())
+
+        slots = self._resolve_slots(ctx, flags.slot)
+        hint_tasks = {slot: _fetch_points_for_slot(slot) for slot in slots}
+        message: list[str] = []
+        for slot, task in sorted(hint_tasks.items(), key=lambda pair: pair[0].name):
+            hint_points = await task
             message.append(
-                "\n".join(
-                    [
-                        f"Slot information for `{slot}`:",
-                        f"- Game: `{slot.game}`",
-                        f"- Item groups: {groups_joined}",
-                    ]
-                )
+                f"- `{slot}`: {hint_points.points_available} points available ({hint_points.points_required} required)"
             )
-        await send_message(ctx, "\n\n".join(message))
+        await send_message(ctx, "\n".join(message), reply=True)
 
-    @info.command(name="item", help="Search for items in your regsitered slots (or a specified slot) containing the given text", ignore_extra=False)  # type: ignore[arg-type]
-    async def info_item(self, ctx: BotContext, *, flags: InfoFlagsValue) -> None:
-        slots = self._state.get_user_slots(ctx.author.id) if flags.slot is None else [cast(SlotInfo, flags.slot)]
-        slot_items = {slot: self._state.search_items(slot.game, cast(str, flags.value)) for slot in slots}
+    async def _send_hints(self, ctx: BotContext, hints: list[HintInfo]) -> None:
+        if not hints:
+            await send_message(ctx, "There are no hints available for the selected slots", reply=True)
+            return
 
-        if all(not items for items in slot_items.values()):
-            await send_message(ctx, f"No items found matching `{flags.value}`")
+        table: dict[str, list[str]] = {"Hinter": [], "Item": [], "Holder": [], "Location": [], "Status": []}
+        for hint in hints:
+            to_slot = self._state.resolve_slot(hint.to_slot_id)
+            from_slot = self._state.resolve_slot(hint.from_slot_id)
+            table["Hinter"].append(str(to_slot))
+            table["Item"].append(str(self._state.resolve_item(to_slot.game, hint.item_id)))
+            table["Holder"].append(str(from_slot))
+            table["Location"].append(str(self._state.resolve_location(from_slot.game, hint.location_id)))
+            table["Status"].append(hint.status.name.lower())
+
+        if len(hints) == 1:
+            self_slot, item, other_slot, location, status = (column[0] for column in table.values())
+            await send_message(
+                ctx, f"`{self_slot}`'s `{item}` is at `{location}` in `{other_slot}`'s world ({status})", reply=True
+            )
         else:
-            table: dict[str, list[str]] = {"Slot": [], "Item": []}
-            for slot, items in slot_items.items():
-                for item in sorted(items, key=lambda i: i.name):
-                    table["Slot"].append(str(slot))
-                    table["Item"].append(item.name)
             await send_table(ctx, table, reply=True)
 
     ################################################
     ################ STATS COMMANDS ################
     ################################################
 
+    class StatsFlags(commands.FlagConverter):
+        mode: StatsOutputMode = commands.flag(positional=True)
+
     @commands.command(name="checks", help="Outputs data on completed/total checks per slot", ignore_extra=False)
-    async def checks(self, ctx: BotContext, mode: StatsOutputMode) -> None:
-        check_counts = {
-            self._state.resolve_slot(slot_id): counts
-            for slot_id, counts in (await self._web.fetch_slot_check_counts()).items()
-        }
-        check_counts = dict(sorted(check_counts.items(), key=lambda pair: pair[0].name))
+    async def checks(self, ctx: BotContext, *, flags: StatsFlags) -> None:
+        server_statuses = (await self._socket.perform_request(StatusMessage, get_status_message())).statuses
+        local_statuses = self._state.slot_checks_statuses()
 
-        if mode == StatsOutputMode.GRAPH:
-            data = {slot: counts.percent for slot, counts in check_counts.items()}
-            plt.figure(figsize=(max(8, len(data) * 0.5), 6))
-            bars = plt.bar([str(slot) for slot in data.keys()], list(data.values()))
-            plt.bar_label(bars, fmt="%.1f")
-            plt.title("Completion Percentage")
-            plt.xlabel("Slot")
-            plt.xticks(rotation=45, ha="right")
-            plt.ylim(bottom=0, top=100)
-            plt.tight_layout()
+        full_statuses: dict[SlotInfo, FullSlotStatus] = {}
+        for slot_name, server_status in server_statuses.items():
+            slot = self._state.resolve_slot(slot_name)
+            local_status = local_statuses[slot]
+            full_statuses[slot] = FullSlotStatus(
+                found_checks=server_status.found_checks,
+                total_checks=server_status.total_checks,
+                self_freed_checks=local_status.self_freed,
+                other_freed_checks=local_status.other_freed,
+                goal_completed=server_status.goal_completed,
+                has_released=local_status.has_released,
+            )
 
-            image_buffer = io.BytesIO()
-            plt.savefig(image_buffer, dpi=200, format="png")
-            image_buffer.seek(0)
-            plt.close()
-
-            await ctx.send(file=discord.File(fp=image_buffer, filename="stats.png"))
-
-        else:
-            table: dict[str, list[str]] = {"Slot": [], "Found": [], "Total": [], "Percent": []}
-            for slot, counts in check_counts.items():
-                table["Slot"].append(str(slot))
-                table["Found"].append(str(counts.found))
-                table["Total"].append(str(counts.total))
-                table["Percent"].append(f"{counts.percent:.1f}%")
-            await send_table(ctx, table, right_just=True)
+        full_statuses = dict(sorted(full_statuses.items(), key=lambda pair: pair[0].name))
+        await (send_checks_graph if flags.mode == StatsOutputMode.GRAPH else send_checks_table)(ctx, full_statuses)
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
-    async def deaths(self, ctx: BotContext, mode: StatsOutputMode) -> None:
+    async def deaths(self, ctx: BotContext, *, flags: StatsFlags) -> None:
         death_counts = dict(sorted(self._state.death_counts().items(), key=lambda pair: pair[0].name))
         if not death_counts:
             await send_message(ctx, "No death links have been triggered yet")
             return
-
-        if mode == StatsOutputMode.GRAPH:
-            plt.figure(figsize=(max(8, len(death_counts) * 0.5), 6))
-            bars = plt.bar([str(slot) for slot in death_counts.keys()], list(death_counts.values()))
-            plt.bar_label(bars)
-            plt.title("Death Counts")
-            plt.xlabel("Slot")
-            plt.xticks(rotation=45, ha="right")
-            plt.tight_layout()
-
-            image_buffer = io.BytesIO()
-            plt.savefig(image_buffer, dpi=200, format="png")
-            image_buffer.seek(0)
-            plt.close()
-
-            await ctx.send(file=discord.File(fp=image_buffer, filename="stats.png"))
-
-        else:
-            table: dict[str, list[str]] = {"Slot": [], "Deaths": []}
-            for slot, count in death_counts.items():
-                table["Slot"].append(str(slot))
-                table["Deaths"].append(str(count))
-            await send_table(ctx, table, right_just=True)
+        await (send_deaths_graph if flags.mode == StatsOutputMode.GRAPH else send_deaths_table)(ctx, death_counts)

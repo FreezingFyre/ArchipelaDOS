@@ -39,7 +39,7 @@ async def send_table(
 
     column_widths = [max(len(entry) for entry in [header] + column) for header, column in table.items()]
     just_funcs = [str.rjust if right_just else str.ljust for _ in table.keys()]
-    just_funcs[0] = str.ljust  # Always left-justify the first column
+    just_funcs[0] = str.ljust  # Always left-justify the first column.
 
     lines: list[str] = []
     lines.append(" | ".join(header.ljust(width) for header, width in zip(table.keys(), column_widths)) + "\n")
@@ -55,7 +55,7 @@ async def send_table(
         )
 
     max_line_length = max(len(line) for line in lines)
-    lines_per_message = (MAX_MESSAGE_SIZE - 6) // max_line_length  # 6 characters for the code block
+    lines_per_message = (MAX_MESSAGE_SIZE - 6) // max_line_length  # 6 characters for the code block.
 
     messages: list[str] = []
     for idx in range(0, len(lines), lines_per_message):

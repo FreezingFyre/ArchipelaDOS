@@ -45,7 +45,7 @@ class BroadcastCategory(str, Enum):
 
 
 # The main configuration class for ArchipelaDOS. Loaded from a YAML file on startup with strict
-# validation enforced by pydantic
+# validation enforced by pydantic.
 class ADOSConfig(BaseModel):
 
     archipelago_room: str
@@ -55,7 +55,7 @@ class ADOSConfig(BaseModel):
     death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
     slot_players: dict[str, set[str]]
 
-    # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure
+    # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure.
     discord_token: str = Field(..., exclude=True, repr=False)
     discord_server: str
     discord_command_channels: set[str]
@@ -66,13 +66,13 @@ class ADOSConfig(BaseModel):
     logging_level: Annotated[int, BeforeValidator(_transform_logging_level)]
     logging_color: bool
 
-    # Serializes the int logging level to a string when dumping to JSON or other formats
+    # Serializes the int logging level to a string when dumping to JSON or other formats.
     @field_serializer("logging_level")
     def _serialize_logging_level(self, level: int) -> str:
         return getLevelName(level)
 
     # Validate the logging path is set when needed, and that the broadcast channel configs
-    # are valid (only one item category filter is set per channel)
+    # are valid (only one item category filter is set per channel).
     @model_validator(mode="after")
     def _validate_logging(self) -> Self:
         if self.logging_behavior not in (LoggingBehavior.NONE, LoggingBehavior.CONSOLE_ONLY):

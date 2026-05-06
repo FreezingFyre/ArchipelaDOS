@@ -3,7 +3,7 @@ import logging
 import re
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Iterator
+from typing import Any, Iterator, NamedTuple
 
 from websockets.typing import Data
 
@@ -28,6 +28,12 @@ class JoinLeaveType(str, Enum):
     LEAVE = "leave"
 
 
+class SlotStatus(NamedTuple):
+    found_checks: int
+    total_checks: int
+    goal_completed: bool
+
+
 def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotInfo:
     alias = player["alias"].replace(f"({player["name"]})", "").strip()
     game = slots_info[str(player["slot"])]["game"]
@@ -39,7 +45,7 @@ def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotI
 ################################################
 
 
-# Sent to the server to initiate a connection after receiving the RoomInfo message
+# Sent to the server to initiate a connection after receiving the RoomInfo message.
 def connect_message(*, game: str, slot: str) -> str:
     return json.dumps(
         [
@@ -58,7 +64,7 @@ def connect_message(*, game: str, slot: str) -> str:
     )
 
 
-# Sent to the server to request the data package for the multiworld
+# Sent to the server to request the data package for the multiworld.
 def get_data_package_message(games: list[str]) -> str:
     return json.dumps(
         [
@@ -70,7 +76,7 @@ def get_data_package_message(games: list[str]) -> str:
     )
 
 
-# Sent to the server to request item groups for games in the multiworld
+# Sent to the server to request item groups for games in the multiworld.
 def get_item_groups_message(games: list[str]) -> str:
     return json.dumps(
         [
@@ -82,19 +88,24 @@ def get_item_groups_message(games: list[str]) -> str:
     )
 
 
-# Sent to the server to request information about current hints or hint point levels
+# Sent to the server to request information about current hints or hint point levels.
 def get_hint_message() -> str:
     return json.dumps([{"cmd": "Say", "text": "!hint"}])
 
 
-# Sent to the server to request a hint for a particular item
+# Sent to the server to request a hint for a particular item.
 def get_hint_item_message(item_name: str) -> str:
     return json.dumps([{"cmd": "Say", "text": f"!hint {item_name}"}])
 
 
-# Sent to the server to request a hint for what is at a particular location
+# Sent to the server to request a hint for what is at a particular location.
 def get_hint_location_message(location_name: str) -> str:
     return json.dumps([{"cmd": "Say", "text": f"!hint_location {location_name}"}])
+
+
+# Sent to the server to request found/total check counts per slot.
+def get_status_message() -> str:
+    return json.dumps([{"cmd": "Say", "text": "!status"}])
 
 
 ################################################
@@ -102,13 +113,13 @@ def get_hint_location_message(location_name: str) -> str:
 ################################################
 
 
-# Sent by the server after the client establishes a websocket connection
+# Sent by the server after the client establishes a websocket connection.
 class RoomInfoMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.games: list[str] = data["games"]
 
 
-# Sent by the server in response to a GetDataPackage message
+# Sent by the server in response to a GetDataPackage message.
 class DataPackageMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.game_items: dict[str, list[ItemInfo]] = {}
@@ -120,31 +131,31 @@ class DataPackageMessage:
             ]
 
 
-# Sent by the server in response to a Connect message if the connection is successful
+# Sent by the server in response to a Connect message if the connection is successful.
 class ConnectedMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slot_id = int(data["slot"])
         self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
-# Sent by the server in response to a Connect message if the connection is unsuccessful
+# Sent by the server in response to a Connect message if the connection is unsuccessful.
 class ConnectionRefusedMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.errors: list[str] = data.get("errors", [])
 
 
-# Sent internally by the websocket client when the connection to Archipelago is closed
+# Sent internally by the websocket client when the connection to Archipelago is closed.
 class ConnectionClosedMessage:
     pass
 
 
-# Sent by the server when the room information is updated -- particularly slot aliases
+# Sent by the server when the room information is updated -- particularly slot aliases.
 class RoomUpdateMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
-# Sent by the server when returning information about item groups for its games
+# Sent by the server when returning information about item groups for its games.
 class ItemGroupsMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.game_groups: dict[str, list[str]] = defaultdict(list)
@@ -153,14 +164,14 @@ class ItemGroupsMessage:
             game = game_key.replace("_read_item_name_groups_", "")
             for group, item_names in groups.items():
                 if len(item_names) < 2:
-                    # No sense bothering with single-item groups
+                    # No sense bothering with single-item groups.
                     continue
                 self.game_groups[game].append(group)
                 for item_name in item_names:
                     self.game_item_groups[game][item_name].append(group)
 
 
-# Sent by the server when one slot sends an item to another slot
+# Sent by the server when one slot sends an item to another slot.
 class ItemSendMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         item_data = data["item"]
@@ -178,39 +189,46 @@ class ItemSendMessage:
                 break
 
 
-# Sent by the server when a slot triggers a death link
+# Sent by the server when a slot triggers a death link.
 class DeathLinkMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slot_name: str = data["data"]["source"]
 
 
-# Sent by the server when a slot connects or disconnects
+# Sent by the server when a slot connects or disconnects.
 class JoinLeaveMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slot_id: int = data["slot"]
         self.join_or_leave: JoinLeaveType = JoinLeaveType.JOIN if data["type"] == "Join" else JoinLeaveType.LEAVE
 
 
-# Sent by the server when a player sends a chat message
+# Sent by the server when a player sends a chat message.
 class PlayerChatMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slot_id: int = data["slot"]
         self.message: str = data["message"]
 
 
-# Sent by the server when the server sends a global chat message
+# Sent by the server when the server sends a global chat message.
 class ServerChatMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.message: str = data["message"]
 
 
-# Sent by the server when a player reaches their goal
+# Sent by the server when a player reaches their goal.
 class GoalReachedMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         self.slot_id: int = data["slot"]
 
 
-# Sent by the server to notify a client of the hints point available/required in for a slot
+# Sent by the server when a game's items are being released (either by goal completion or)
+# manual release by an admin.
+class SlotReleaseMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.slot_id: int = data["slot"]
+
+
+# Sent by the server to notify a client of the hint points available/required in for a slot.
 class HintPointsMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         text = data["data"][0]["text"]
@@ -221,7 +239,7 @@ class HintPointsMessage:
         self.points_available = int(match.group(2))
 
 
-# Sent by the server to notify a client of a collection of hints for a slot
+# Sent by the server to notify a client of a collection of hints for a slot.
 class HintsMessage:
     def __init__(self, data: list[dict[str, Any]]) -> None:
         def _get_status(info: dict[str, Any]) -> HintStatus:
@@ -243,6 +261,23 @@ class HintsMessage:
         ]
 
 
+# Sent by the server in response to a status request, outlining the found/total check counts for all slots.
+class StatusMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.statuses: dict[str, SlotStatus] = {}
+        text: str = data["data"][0]["text"]
+        for line in text.splitlines():
+            match = re.match(r"(.*) has \d+ connect.*\((\d+)/(\d+)\)", line)
+            if not match or match.group(3) == "0":  # Don't bother with slots with no checks (like the bot itself).
+                continue
+            found_checks = int(match.group(2))
+            total_checks = int(match.group(3))
+
+            self.statuses[match.group(1)] = SlotStatus(
+                found_checks=found_checks, total_checks=total_checks, goal_completed=(" has finished. " in line)
+            )
+
+
 type ServerMessage = (
     RoomInfoMessage
     | DataPackageMessage
@@ -257,11 +292,16 @@ type ServerMessage = (
     | PlayerChatMessage
     | ServerChatMessage
     | GoalReachedMessage
+    | SlotReleaseMessage
     | HintPointsMessage
     | HintsMessage
+    | StatusMessage
 )
 
 
+# Server messages are sent to connected clients as lists of JSON objects. This deserialize function
+# splits each list into the requisite message types and yields them individually. The exception is for
+# responses to hint messages, which are bundled into one message type for return.
 def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
     try:
         messages = json.loads(raw_message)
@@ -304,12 +344,20 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ServerChatMessage(message)
             elif cmd == "PrintJSON" and message.get("type") == "Goal":
                 yield GoalReachedMessage(message)
+            elif cmd == "PrintJSON" and message.get("type") in {"Collect", "Release"}:
+                yield SlotReleaseMessage(message)
             elif (
                 cmd == "PrintJSON"
                 and message.get("type") == "CommandResult"
                 and message.get("data", [{}])[0].get("text", "").startswith("A hint costs")
             ):
                 yield HintPointsMessage(message)
+            elif (
+                cmd == "PrintJSON"
+                and message.get("type") == "CommandResult"
+                and message.get("data", [{}])[0].get("text", "").startswith("Player Status")
+            ):
+                yield StatusMessage(message)
 
     except Exception as ex:
         _log.error("Failed to deserialize server message: %s - %s", ex, raw_message)
