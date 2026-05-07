@@ -25,6 +25,8 @@ The Discord portion of the setup should be a one-time deal. You will create a bo
 
 Setting up the bot is also a one-time deal. After you've set it up once (for a particular version), you can re-run the same bot for a different Archipelago room with minor configuration tweaks.
 
+### Manual
+
 **Prerequisite**: [Python 3.12](https://www.python.org/downloads/latest/python3.12/) (with `pip` package manager)
 
 Note: Python 3.13 should work as well, but 3.14 will *not*, as ArchipelaDOS's dependencies do not yet support the latest version.
@@ -42,6 +44,31 @@ Note: Python 3.13 should work as well, but 3.14 will *not*, as ArchipelaDOS's de
 6. Install dependencies:
     - `pip install -r requirements.txt`
 
+### Docker
+
+If you're familiar with Docker, it may be an easier way to get started with the bot. The latest Docker image for the bot is available through `ghcr.io/freezingfyre/archipelados:latest`. Within the container, the server is started from within the `/ados` directory, and it expects a `/ados/config.yaml` to be linked externally. Depending on your configuration, you may need to link a death link file as well.
+
+Example `docker run` command:
+
+```
+docker run -d \
+    -v /path/to/local/config.yaml:/ados/config.yaml:ro \
+    -v /path/to/local/deathlinks.txt:/ados/deathlinks.txt:ro \
+    ghcr.io/freezingfyre/archipelados:latest
+```
+
+Or alternatively, as a `docker-compose.yaml` file:
+
+```yaml
+services:
+    archipelados:
+        image: ghcr.io/freezingfyre/archipelados:latest
+        restart: unless-stopped
+        volumes:
+            - /path/to/local/config.yaml:/ados/config.yaml:ro
+            - /path/to/local/deathlinks.txt:/ados/deathlinks.txt:ro
+```
+
 ## Bot configuration
 
 All bot configuration is done through the `config.yaml` file in the ArchipelaDOS installation folder. The configuration is well-documented there, and should be relatively self-explanatory. Still, the important configurations are described here.
@@ -56,13 +83,13 @@ The following configurations are *essential* to set:
 - `discord_command_channels`: A list of channels in which ArchipelaDOS should listen for, and repond to, user commands
 - `discord_broadcast_channels`: A dictionary of which message types to broadcast to which Discord channels; these channels can overlap with those in `discord_command_channels`
     - The simplest configuration here is to broadcast all messages to a single channel; an empty list indicates you want all messages to be broadcast:
-        ```
+        ```yaml
         discord_broadcast_channels: { "my_channel": [] }
         ```
     - If you want to broadcast death link messages to one channel, and item/join/leave messages to another, you could do:
-        ```
+        ```yaml
         discord_broadcast_channels: {
-            "channel_1": ["death_links"]
+            "channel_1": ["death_links"],
             "channel_2": ["all_items", "join_leave"]
         }
         ```
@@ -76,7 +103,7 @@ The following configurations may need to be set, depending on your setup:
 
 ## Running the bot
 
-Once your bot environment is set up, and you've configured it appropriately in `config.yaml`, you can actually run ArchipelaDOS.
+Once your bot environment is set up, and you've configured it appropriately in `config.yaml`, you can actually run ArchipelaDOS. If using Docker, it's as simple as starting the Docker container as one would typically. If running manually, you can:
 
 1. Navigate to the `ArchipelaDOS-<version>` folder within a terminal (the one you set up in [Bot setup](#bot-setup))
     - On Windows, you can Shift/Right-Click in the folder in Windows Explorer and select `Open PowerShell window here`
