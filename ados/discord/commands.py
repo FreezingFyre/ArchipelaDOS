@@ -278,7 +278,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             )
         await send_message(ctx, "\n\n".join(message))
 
-    @slot.command(name="search", help="Search for items/locations in your regsitered slots containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 6})  # type: ignore[arg-type]
+    @slot.command(name="search", help="Search for items/locations in your registered slots containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 6})  # type: ignore[arg-type]
     async def slot_search(self, ctx: BotContext, *, flags: SlotFlagsValue) -> None:
         slots = self._resolve_slots(ctx, flags.slot)
         slot_items = {slot: self._state.search_items(slot.game, cast(str, flags.value)) for slot in slots}
@@ -330,7 +330,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
-    @replay.command(name="full", help="Replay all items recieved since game start (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    @replay.command(name="full", help="Replay all items received since game start (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def replay_full(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
         slots = self._resolve_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
@@ -509,10 +509,11 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             return await socket.perform_request(HintsMessage, get_hint_message())
 
         slots = self._resolve_slots(ctx, flags.slot)
-        hint_tasks = [_fetch_hints_for_slot(slot) for slot in slots]
+        results = await asyncio.gather(*(_fetch_hints_for_slot(slot) for slot in slots))
+
         hints: list[HintInfo] = []
-        for task in hint_tasks:
-            hints.extend((await task).hints)
+        for result in results:
+            hints.extend(result.hints)
         await self._send_hints(ctx, [hint for hint in hints if not hint.found])
 
     @hint.command(name="points", help="Show hint points held and needed (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
@@ -522,12 +523,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             return await socket.perform_request(HintPointsMessage, get_hint_message())
 
         slots = self._resolve_slots(ctx, flags.slot)
-        hint_tasks = {slot: _fetch_points_for_slot(slot) for slot in slots}
+        results = await asyncio.gather(*(_fetch_points_for_slot(slot) for slot in slots))
+
         message: list[str] = []
-        for slot, task in sorted(hint_tasks.items(), key=lambda pair: pair[0].name):
-            hint_points = await task
+        for slot, result in zip(slots, results):
             message.append(
-                f"- `{slot}`: {hint_points.points_available} points available ({hint_points.points_required} required)"
+                f"- `{slot}`: {result.points_available} points available ({result.points_required} required)"
             )
         await send_message(ctx, "\n".join(message), reply=True)
 

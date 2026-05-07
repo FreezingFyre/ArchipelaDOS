@@ -24,14 +24,6 @@ def _expand_path(value: Optional[str]) -> Optional[str]:
     return os.path.abspath(value) if value is not None else None
 
 
-class LoggingBehavior(str, Enum):
-    NONE = "none"
-    CONSOLE_ONLY = "console_only"
-    FILE_OVERWRITE = "file_overwrite"
-    FILE_APPEND = "file_append"
-    FILE_DIRECTORY = "file_directory"
-
-
 class BroadcastCategory(str, Enum):
     PROGRESSION_ITEMS = "progression_items"
     USEFUL_ITEMS = "useful_items"
@@ -51,9 +43,6 @@ class ADOSConfig(BaseModel):
     archipelago_room: str
     archipelago_slot: str
     archipelago_game: str
-    data_path: Annotated[str, BeforeValidator(_expand_path)]
-    death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
-    slot_players: dict[str, set[str]]
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure.
     discord_token: str = Field(..., exclude=True, repr=False)
@@ -61,24 +50,26 @@ class ADOSConfig(BaseModel):
     discord_command_channels: set[str]
     discord_broadcast_channels: dict[str, set[BroadcastCategory]]
 
-    logging_behavior: LoggingBehavior
-    logging_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
+    data_path: Annotated[str, BeforeValidator(_expand_path)]
+    death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
+    slot_players: dict[str, set[str]]
+
     logging_level: Annotated[int, BeforeValidator(_transform_logging_level)]
     logging_color: bool
+
+    @property
+    def room_data_path(self) -> str:
+        return os.path.join(self.data_path, self.archipelago_room)
 
     # Serializes the int logging level to a string when dumping to JSON or other formats.
     @field_serializer("logging_level")
     def _serialize_logging_level(self, level: int) -> str:
         return getLevelName(level)
 
-    # Validate the logging path is set when needed, and that the broadcast channel configs
-    # are valid (only one item category filter is set per channel).
+    # Validate that the broadcast channel configs are valid (only one item category filter
+    # is set per channel).
     @model_validator(mode="after")
-    def _validate_logging(self) -> Self:
-        if self.logging_behavior not in (LoggingBehavior.NONE, LoggingBehavior.CONSOLE_ONLY):
-            if not self.logging_path:
-                raise ValueError("logging_path must be set for the selected logging_behavior")
-
+    def _validate_channels(self) -> Self:
         item_categories = {
             BroadcastCategory.PROGRESSION_ITEMS,
             BroadcastCategory.USEFUL_ITEMS,
@@ -89,7 +80,6 @@ class ADOSConfig(BaseModel):
                 raise ValueError(
                     f"broadcast channel config cannot contain multiple of {[category.value for category in item_categories]}"
                 )
-
         return self
 
 

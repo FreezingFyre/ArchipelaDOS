@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-from ados.config import ADOSConfig, LoggingBehavior
+from ados.config import ADOSConfig
 
 
 # Formatter for writing to log files and non-colored console output.
@@ -41,30 +41,12 @@ def initialize_logging(config: ADOSConfig) -> None:
 
     log = logging.getLogger()
 
-    if config.logging_behavior == LoggingBehavior.NONE:
-        log.disabled = True
-        return
-
-    # Always output to the console when logging is enabled.
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(ColorFormatter() if config.logging_color else BasicFormatter())
     log.addHandler(console_handler)
     log.setLevel(config.logging_level)
 
-    if config.logging_behavior == LoggingBehavior.CONSOLE_ONLY:
-        return
-
-    # Path must be set when logging to a file; this is enforced for the config by pydantic.
-    assert config.logging_path is not None
-
-    if config.logging_behavior == LoggingBehavior.FILE_DIRECTORY:
-        os.makedirs(config.logging_path, exist_ok=True)
-        file_path = os.path.join(config.logging_path, f"ados_{config.archipelago_room}.log")
-    else:
-        os.makedirs(os.path.dirname(config.logging_path), exist_ok=True)
-        file_path = config.logging_path
-    mode = "w" if config.logging_behavior == LoggingBehavior.FILE_OVERWRITE else "a"
-
-    file_handler = logging.FileHandler(file_path, mode=mode)
+    file_path = os.path.join(config.room_data_path, "ados.log")
+    file_handler = logging.FileHandler(file_path, mode="a")
     file_handler.setFormatter(BasicFormatter())
     log.addHandler(file_handler)

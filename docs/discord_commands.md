@@ -25,6 +25,8 @@ For the below command specs, for those who are unfamiliar: `<angle_brackets>` de
 
 ## Room management commands
 
+The bot operates by connecting to one Archipelago room at a time.
+
 | | |
 |-|-|
 | `!room info`    | Get information about the Archipelago room (port, list of slots, etc) |
@@ -41,7 +43,7 @@ Users can "register" themselves for particular slots. This affects which slots' 
 | `!slot list`                         | Lists all slots for which you are registered |
 | `!slot clear`                        | Clears your registration for all slots |
 | `!slot info [slot]`                  | Get information about your registered slots (game, item groups, etc); optionally filtered by `slot` |
-| `!slot search <text> [slot: <slot>]` | Search for items/locations in your regsitered slots containing the given `text`; optionally filtered by `slot` |
+| `!slot search <text> [slot: <slot>]` | Search for items/locations in your registered slots containing the given `text`; optionally filtered by `slot` |
 
 ## Item send replay commands
 
@@ -50,7 +52,7 @@ A particularly useful feature of the bot is the ability of users to replay the h
 | | |
 |-|-|
 | `!replay new [filter] [slot: <slot>] [since: <delta>]`  | Replay items received since last call to `!replay new`; optionally filtered by rarity `filter`, `slot`, or relative time `delta` ("8h", "30m", etc) |
-| `!replay full [filter] [slot: <slot>] [since: <delta>]` | Replay all items recieved since game start; optionally filtered by rarity `filter`, `slot`, or relative time `delta` ("8h", "30m", etc) |
+| `!replay full [filter] [slot: <slot>] [since: <delta>]` | Replay all items received since game start; optionally filtered by rarity `filter`, `slot`, or relative time `delta` ("8h", "30m", etc) |
 | `!ketchmeup [filter] [slot: <slot>] [since: <delta>]`   | Alias of `!replay new` (credit to [bridgeipelago](https://github.com/Quasky/bridgeipelago) for the name) |
 
 ## Subscription commands

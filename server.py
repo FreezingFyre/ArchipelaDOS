@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 
 from ados.config import load_config
@@ -17,6 +18,7 @@ async def main() -> None:
     config_path = sys.argv[1] if len(sys.argv) == 2 else DEFAULT_CONFIG_PATH
     try:
         config = load_config(config_path)
+        os.makedirs(config.room_data_path, exist_ok=True)
         initialize_logging(config)
     except Exception as ex:
         print("\n".join(line for line in str(ex).splitlines() if "further information" not in line))

@@ -26,6 +26,7 @@ _log = logging.getLogger(__name__)
 
 
 RETRY_DELAYS = [timedelta(seconds=x) for x in (0, 2, 5, 10, 20)]
+MAX_LOG_SIZE = 4096
 
 
 # Provides access to the Archipelago socket interface. Establishes a connection in
@@ -150,7 +151,7 @@ class SocketClient:
         assert self._socket is not None
         try:
             async for socket_message in self._socket:
-                _log.info("Received socket message for slot '%s': %s", self._slot_name, socket_message[:2048])
+                _log.info("Received socket message for slot '%s': %s", self._slot_name, socket_message[:MAX_LOG_SIZE])
                 for message in deserialize(socket_message):
                     self._handle_message(message)
         except ConnectionClosedError as ex:

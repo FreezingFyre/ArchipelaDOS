@@ -95,7 +95,7 @@ class LocationInfo(NamedTuple):
         return self.name
 
 
-# Stores information about an items that was sent from one slot to another in
+# Stores information about an item that was sent from one slot to another in
 # the multiworld. Do not bother storing full ItemInfo or SlotInfo objects here,
 # as this is only used for user-facing outputs.
 class SentItemInfo(NamedTuple):

@@ -62,9 +62,10 @@ class StateData(BaseModel):
 
 
 # The data stored in the item log file.
-class ItemLogData(NamedTuple):
-    slot_items: dict[int, list[SentItemInfo]] = defaultdict(list)
-    user_slot_replay_index: dict[UserSlot, int] = defaultdict(int)
+class ItemLogData:
+    def __init__(self) -> None:
+        self.slot_items: dict[int, list[SentItemInfo]] = defaultdict(list)
+        self.user_slot_replay_index: dict[UserSlot, int] = defaultdict(int)
 
 
 # User input will match names in a case-insensitive, purely alphanumeric way.
@@ -89,10 +90,9 @@ class GlobalState:
         return _wrapper
 
     def __init__(self, config: ADOSConfig, socket: SocketClient):
-        os.makedirs(config.data_path, exist_ok=True)
         self._config = config
-        self._state_file = os.path.join(config.data_path, f"{config.archipelago_room}_state.json")
-        self._item_log_file = os.path.join(config.data_path, f"{config.archipelago_room}_item_log.txt")
+        self._state_file = os.path.join(config.room_data_path, "state.json")
+        self._item_log_file = os.path.join(config.room_data_path, "item_log.txt")
 
         self._slots: dict[int, SlotInfo] = {}
         self._slot_ids_by_name: dict[str, int] = {}
@@ -201,16 +201,6 @@ class GlobalState:
                 if not self._state.user_slot_ids[user_id]:
                     self._state.user_slot_ids.pop(user_id)
 
-    # Alan releases all
-
-    # Alan sends *** to Beth
-    # This was an item Alan held onto until completion, should be "Self Freed" for Alan
-
-    # Beth sends *** to Alan
-    # This was an item Beth had forcibly freed, should be "Other Freed" for Beth
-
-    # After a slot has its items mass-released, we want to record the counts of item sends separately
-    # for stat reporting purposes.
     @persist
     def _record_auto_item(self, from_slot_id: int, to_slot_id: int) -> None:
         if from_slot_id in self._state.slots_released:

@@ -1,4 +1,5 @@
 import io
+from typing import Optional
 
 import discord
 import matplotlib.pyplot as plt
@@ -12,7 +13,13 @@ COLOR_3 = "#C2A56D"
 COLOR_4 = "#E8EDF2"
 
 
-async def _send_graph(ctx: BotContext) -> None:
+async def _finalize_graph(ctx: BotContext, title: str) -> None:
+    plt.title(title, fontsize=16)
+    plt.xlabel("Slot", fontsize=14)
+    plt.xticks(rotation=45, ha="right")
+    plt.gca().set_ylim(top=plt.gca().get_ylim()[1] * 1.08)
+    plt.tight_layout()
+
     image_buffer = io.BytesIO()
     plt.savefig(image_buffer, dpi=250, format="png")
     plt.close()
@@ -54,37 +61,55 @@ async def send_checks_table(ctx: BotContext, full_statuses: dict[SlotInfo, FullS
 
 async def send_checks_graph(ctx: BotContext, full_statuses: dict[SlotInfo, FullSlotStatus]) -> None:
     labels = [str(slot) for slot in full_statuses.keys()]
-    full_found = [status.found_checks for status in full_statuses.values()]
-    full_unfound = [status.total_checks - status.found_checks for status in full_statuses.values()]
-    other_freed = [status.other_freed_checks for status in full_statuses.values()]
-    self_freed = [status.self_freed_checks for status in full_statuses.values()]
-    base_found = [
-        status.found_checks - status.self_freed_checks - status.other_freed_checks for status in full_statuses.values()
-    ]
+    statuses = list(full_statuses.values())
 
-    plt.figure(figsize=(max(8, len(labels) * 0.5), 6))
-    plt.bar(labels, base_found, color=COLOR_1)
-    plt.bar(labels, other_freed, bottom=base_found, color=COLOR_2)
-    bars = plt.bar(labels, self_freed, bottom=[a + b for a, b in zip(base_found, other_freed)], color=COLOR_3)
-    plt.bar_label(bars, labels=[str(status.found_checks) for status in full_statuses.values()], padding=2)
-    plt.bar(labels, full_unfound, bottom=full_found, color=COLOR_4)
+    bold_bars = [s.has_released or s.goal_completed for s in statuses]
+    base_found = [s.found_checks - s.self_freed_checks - s.other_freed_checks for s in statuses]
+    other_freed = [s.other_freed_checks for s in statuses]
+    self_freed = [s.self_freed_checks for s in statuses]
+    all_found = [s.found_checks for s in statuses]
+    all_unfound = [s.total_checks - s.found_checks for s in statuses]
+    total_checks = [s.total_checks for s in statuses]
 
-    plt.title("Check Completion", fontsize=16)
-    plt.xlabel("Slot", fontsize=14)
-    plt.xticks(rotation=45, ha="right")
-    plt.gca().set_ylim(top=plt.gca().get_ylim()[1] * 1.05)
-    plt.tight_layout()
+    async def _send_stacked_graph(
+        title: str,
+        *,
+        base: list[int] | list[float],
+        mid: list[int] | list[float],
+        top: list[int] | list[float],
+        cap: Optional[list[int] | list[float]] = None,
+        bar_labels: list[str],
+    ) -> None:
+        plt.figure(figsize=(max(8, len(labels) * 0.5), 6))
 
-    plot_labels = plt.gca().get_xticklabels()
-    for slot, status in full_statuses.items():
-        if not status.has_released:
-            continue
-        for plot_label in plot_labels:
-            if plot_label.get_text() == str(slot):
-                plot_label.set_fontweight("bold")
-                break
+        plt.bar(labels, base, color=COLOR_1)
+        plt.bar(labels, mid, bottom=base, color=COLOR_2)
+        bars = plt.bar(labels, top, bottom=[sum(vals) for vals in zip(base, mid)], color=COLOR_3)
+        plt.bar_label(bars, labels=bar_labels, padding=2)
+        if cap is not None:
+            plt.bar(labels, cap, bottom=[sum(vals) for vals in zip(base, mid, top)], color=COLOR_4)
 
-    await _send_graph(ctx)
+        for label, should_bold in zip(plt.gca().get_xticklabels(), bold_bars):
+            if should_bold:
+                label.set_fontweight("bold")
+        await _finalize_graph(ctx, title)
+
+    await _send_stacked_graph(
+        "Check Completion",
+        base=base_found,
+        mid=other_freed,
+        top=self_freed,
+        cap=all_unfound,
+        bar_labels=[str(val) for val in all_found],
+    )
+
+    await _send_stacked_graph(
+        "Completion Percentage",
+        base=[a / b for a, b in zip(base_found, total_checks)],
+        mid=[a / b for a, b in zip(other_freed, total_checks)],
+        top=[a / b for a, b in zip(self_freed, total_checks)],
+        bar_labels=[f"{a / b * 100:.1f}" for a, b in zip(all_found, total_checks)],
+    )
 
 
 async def send_deaths_table(ctx: BotContext, death_counts: dict[SlotInfo, int]) -> None:
@@ -99,11 +124,4 @@ async def send_deaths_graph(ctx: BotContext, death_counts: dict[SlotInfo, int]) 
     plt.figure(figsize=(max(8, len(death_counts) * 0.5), 6))
     bars = plt.bar([str(slot) for slot in death_counts.keys()], list(death_counts.values()), color=COLOR_1)
     plt.bar_label(bars, padding=2)
-
-    plt.title("Death Counts", fontsize=16)
-    plt.xlabel("Slot", fontsize=14)
-    plt.xticks(rotation=45, ha="right")
-    plt.gca().set_ylim(top=plt.gca().get_ylim()[1] * 1.05)
-    plt.tight_layout()
-
-    await _send_graph(ctx)
+    await _finalize_graph(ctx, "Death Counts")

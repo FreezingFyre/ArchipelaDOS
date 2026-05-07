@@ -201,7 +201,7 @@ class MessageBroadcaster:
         self_send = message.to_slot_id == message.from_slot_id
         if message.category == ItemCategory.TRAP:
             if self_send:
-                content = f":broken_heart: {highlight(from_slot)} subjected themsevles to `{item}`"
+                content = f":broken_heart: {highlight(from_slot)} subjected themselves to `{item}`"
             else:
                 content = f":broken_heart: {highlight(from_slot)} subjected {highlight(to_slot)} to `{item}`"
         else:

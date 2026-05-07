@@ -15,21 +15,6 @@ archipelago_slot: ArchipelaDOS
 # archipelago_slot if you did not include ArchipelaDOS.yaml during generation.
 archipelago_game: Archipelago
 
-# The directory in which to store persistent bot data, so the bot can be restarted. Files in
-# this directory will be created per-room, so different rooms will not interfere with each other.
-data_path: data
-
-# The file containing custom death link messages, if desired. This file should be formatted
-# with one message per line, where each line includes a {player} token that will be replaced
-# with the name of the player who died.
-death_link_messages_path: null
-
-# For some messages sent from Archipelago, a player name will be provided instead of a slot name
-# or ID. This can happen for, say, death links from multiplayer games (like Minecraft, Raft),
-# which may provide a particular player's name. This setting links a list of player names to a slot
-# name, so that death links can be properly tracked per slot in these cases.
-slot_players: {}
-
 
 ###################
 # DISCORD OPTIONS #
@@ -61,19 +46,23 @@ discord_broadcast_channels: {}
 
 
 #########################
-# LOCAL LOGGING OPTIONS #
+# MISCELLANEOUS OPTIONS #
 #########################
 
-# How the bot handles logging. Logs will always be printed to the console unless disabled.
-#   - "none": Disables logging entirely.
-#   - "console_only": Logs will only be printed to the console.
-#   - "file_overwrite": Logs will be written to a file, overwriting it on each run.
-#   - "file_append": Logs will be written to a file, appending to it on each run.
-#   - "file_directory": Logs will be appended to a room-specific file in a directory.
-logging_behavior: file_directory
+# The directory in which to store persistent bot data, so the bot can be restarted. Files in
+# this directory will be created per-room, so different rooms will not interfere with each other.
+data_path: data
 
-# The path to the log file or directory, depending on the logging behavior.
-logging_path: logs
+# The file containing custom death link messages, if desired. This file should be formatted
+# with one message per line, where each line includes a {player} token that will be replaced
+# with the name of the player who died.
+death_link_messages_path: null
+
+# For some messages sent from Archipelago, a player name will be provided instead of a slot name
+# or ID. This can happen for, say, death links from multiplayer games (like Minecraft, Raft),
+# which may provide a particular player's name. This setting links a list of player names to a slot
+# name, so that death links can be properly tracked per slot in these cases.
+slot_players: {}
 
 # The minimum logging level to record. Must be one of: "debug", "info", "warning", "error", "critical".
 logging_level: info
