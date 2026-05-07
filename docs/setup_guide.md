@@ -46,7 +46,7 @@ Note: Python 3.13 should work as well, but 3.14 will *not*, as ArchipelaDOS's de
 
 ### Docker
 
-If you're familiar with Docker, it may be an easier way to get started with the bot. The latest Docker image for the bot is available through `ghcr.io/freezingfyre/archipelados:latest`. Within the container, the server is started from within the `/ados` directory, and it expects a `/ados/config.yaml` to be linked externally. Depending on your configuration, you may need to link a death link file as well.
+If you're familiar with Docker, it may be an easier way to get started with the bot. The latest Docker image for the bot is available through `ghcr.io/freezingfyre/archipelados:latest`. Within the container, the server is started from within the `/ados` directory, and it expects an `/ados/config.yaml` to be linked externally. Depending on your configuration, you may need to link a death link file as well.
 
 Example `docker run` command:
 

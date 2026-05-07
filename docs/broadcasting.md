@@ -6,7 +6,7 @@ The bot can broadcast messages from the Archipelago multiworld into one or more 
 
 ## Configuration
 
-Broadcast channels are configured via the `discord_broadcast_channels` field in `config.yaml`. Each entry maps a Discord channel name to a list of broadcast categories. If the list is empty, **all** message types will be broadcast to that channel. As an example:
+Broadcast channels are configured via the `discord_broadcast_channels` field in `config.yaml`. Each entry maps a Discord channel name to a list of broadcast categories. If the list is empty, *all* message types will be broadcast to that channel. As an example:
 
 ```yaml
 discord_broadcast_channels:
