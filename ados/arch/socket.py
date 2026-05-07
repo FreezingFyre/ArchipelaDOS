@@ -56,10 +56,10 @@ class SocketClient:
 
     async def disconnect(self) -> None:
         if self._socket is not None:
-            assert self._socket_task is not None
             _log.info("Closing existing socket connection to '%s' for slot '%s'", self._server_url, self._slot_name)
             await self._socket.close()
-            await self._socket_task
+            if self._socket_task is not None:
+                await self._socket_task
         self._socket = None
         self._socket_task = None
         self._server_url = None

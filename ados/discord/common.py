@@ -35,7 +35,6 @@ async def send_table(
     ctx: BotContext, table: dict[str, list[str]], *, reply: bool = False, right_just: bool = False
 ) -> None:
     num_rows = len(next(iter(table.values())))
-    assert all(len(column) == num_rows for column in table.values())
 
     column_widths = [max(len(entry) for entry in [header] + column) for header, column in table.items()]
     just_funcs = [str.rjust if right_just else str.ljust for _ in table.keys()]
