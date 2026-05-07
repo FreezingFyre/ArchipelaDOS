@@ -144,8 +144,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     def _resolve_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
         if flag_slot is not None:
-            assert isinstance(flag_slot, SlotInfo)
-            return [flag_slot]
+            return [cast(SlotInfo, flag_slot)]
 
         slots = self._state.get_user_slots(ctx.author.id)
         if len(slots) == 0:

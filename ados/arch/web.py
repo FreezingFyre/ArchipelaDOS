@@ -31,13 +31,11 @@ class WebClient:
 
     @property
     def tracker_url(self) -> str:
-        assert self._tracker_url is not None
-        return self._tracker_url
+        return self._tracker_url or "<UNKNOWN>"
 
     @property
     def server_url(self) -> str:
-        assert self._server_url is not None
-        return self._server_url
+        return self._server_url or "<UNKNOWN>"
 
     async def refresh(self) -> None:
 
