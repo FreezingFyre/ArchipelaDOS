@@ -22,12 +22,12 @@ from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import (
     ADOSError,
-    FullSlotStatus,
     HintInfo,
     ItemCategoryFilter,
     ItemInfo,
     LocationInfo,
     SentItemInfo,
+    SlotFullStatus,
     SlotInfo,
     SubscriptionType,
     join_objects,
@@ -36,16 +36,12 @@ from ados.config import ADOSConfig
 from ados.discord.common import (
     COMMAND_PREFIX,
     BotContext,
+    highlight,
     send_message,
     send_success,
     send_table,
 )
-from ados.discord.plotting import (
-    send_checks_graph,
-    send_checks_table,
-    send_deaths_graph,
-    send_deaths_table,
-)
+from ados.discord.plotting import GraphPlotter, TablePlotter
 from ados.state import GlobalState
 
 _log = logging.getLogger(__name__)
@@ -62,6 +58,11 @@ class StatsOutputMode(str, Enum):
     LIST = "list"
     TABLE = "table"
     GRAPH = "graph"
+
+
+class HintFilter(str, Enum):
+    ALL = "all"
+    UNFOUND = "unfound"
 
 
 class SlotInfoArg(commands.Converter[SlotInfo]):
@@ -379,8 +380,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slot: Optional[SlotInfoArg] = None
 
     @commands.group(name="subscribe", help="Manage item subscriptions, which will notify you on item send", invoke_without_command=True)  # type: ignore[arg-type]
-    async def subscribe(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}subscribe`")
+    async def subscribe(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
+        await self.subscribe_item(ctx, flags=flags)  # type: ignore[arg-type]
 
     @subscribe.command(name="item", help="Subscribes you for the given item (can filter by slot if needed)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def subscribe_item(self, ctx: BotContext, *, flags: SubscribeFlagsItem) -> None:
@@ -420,7 +421,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsValue) -> None:
-        self._state.remove_user_subscription(ctx.author.id, flags.slot, flags.value)
+        self._state.remove_user_subscriptions(ctx.author.id, flags.slot, flags.value)
         await send_success(ctx, f"You have removed items/group subscriptions matching `{flags.value}`")
 
     @subscribe.command(name="list", help="Lists your active item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
@@ -439,15 +440,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
-        self._state.remove_user_subscription(ctx.author.id, flags.slot, "")
+        self._state.remove_user_subscriptions(ctx.author.id, flags.slot, None)
         await send_success(ctx, "You have cleared your item/group subscriptions")
 
     ################################################
     ################ HINT COMMANDS #################
     ################################################
-
-    class HintFlags(commands.FlagConverter):
-        slot: Optional[SlotInfoArg] = commands.flag(positional=True, default=None)
 
     class HintFlagsItem(commands.FlagConverter):
         item: StringArg = commands.flag(positional=True)
@@ -457,9 +455,16 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         location: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
 
+    class HintFlagsList(commands.FlagConverter):
+        filter: HintFilter = commands.flag(positional=True, default=HintFilter.UNFOUND)
+        slot: Optional[SlotInfoArg] = None
+
+    class HintFlagsPoints(commands.FlagConverter):
+        slot: Optional[SlotInfoArg] = None
+
     @commands.group(name="hint", help="View and use hints for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
-    async def hint(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}hint`")
+    async def hint(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
+        await self.hint_item(ctx, flags=flags)  # type: ignore[arg-type]
 
     @hint.command(name="item", help="Use a hint for the given item (can filter by slot if needed)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def hint_item(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
@@ -478,8 +483,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             raise ADOSError(f"Item `{flags.item}` exists in multiple slots; please specify one to hint")
 
         socket = await self._get_slot_socket(matching_slots[0])
-        hints = (await socket.perform_request(HintsMessage, get_hint_item_message(item.name))).hints
-        await self._send_hints(ctx, hints)
+        response = await socket.perform_request(HintsMessage, get_hint_item_message(item.name))
+        points = await socket.perform_request(HintPointsMessage, get_hint_message())
+        await self._send_hint_response(ctx, response, points)
 
     @hint.command(name="location", help="Use a hint to see what is at the given location (can filter by slot if needed)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def hint_location(self, ctx: BotContext, *, flags: HintFlagsLocation) -> None:
@@ -498,11 +504,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             raise ADOSError(f"Location `{flags.location}` exists in multiple slots; please specify one to hint")
 
         socket = await self._get_slot_socket(matching_slots[0])
-        hints = (await socket.perform_request(HintsMessage, get_hint_location_message(location.name))).hints
-        await self._send_hints(ctx, hints)
+        response = await socket.perform_request(HintsMessage, get_hint_location_message(location.name))
+        points = await socket.perform_request(HintPointsMessage, get_hint_message())
+        await self._send_hint_response(ctx, response, points)
 
     @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
-    async def hint_list(self, ctx: BotContext, *, flags: HintFlags) -> None:
+    async def hint_list(self, ctx: BotContext, *, flags: HintFlagsList) -> None:
         async def _fetch_hints_for_slot(slot: SlotInfo) -> HintsMessage:
             socket = await self._get_slot_socket(slot)
             return await socket.perform_request(HintsMessage, get_hint_message())
@@ -513,10 +520,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         hints: list[HintInfo] = []
         for result in results:
             hints.extend(result.hints)
-        await self._send_hints(ctx, [hint for hint in hints if not hint.found])
+        if flags.filter == HintFilter.UNFOUND:
+            hints = [hint for hint in hints if not hint.found]
+        await self._send_hints(ctx, hints)
 
     @hint.command(name="points", help="Show hint points held and needed (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
-    async def hint_points(self, ctx: BotContext, *, flags: HintFlags) -> None:
+    async def hint_points(self, ctx: BotContext, *, flags: HintFlagsPoints) -> None:
         async def _fetch_points_for_slot(slot: SlotInfo) -> HintPointsMessage:
             socket = await self._get_slot_socket(slot)
             return await socket.perform_request(HintPointsMessage, get_hint_message())
@@ -529,11 +538,26 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             message.append(
                 f"- `{slot}`: {result.points_available} points available ({result.points_required} required)"
             )
-        await send_message(ctx, "\n".join(message), reply=True)
+        await send_message(ctx, "\n".join(message))
+
+    async def _send_hint_response(self, ctx: BotContext, response: HintsMessage, points: HintPointsMessage) -> None:
+        if response.result == HintsMessage.Result.SUCCESS:
+            await self._send_hints(ctx, response.hints)
+            await send_message(
+                ctx,
+                f"You have {points.points_available} points remaining ({points.points_required} required)",
+                reply=True,
+            )
+        elif response.result == HintsMessage.Result.NOT_FOUND:
+            raise ADOSError("Nothing found for recognized object name; object appears to not exist in the multiworld")
+        elif response.result == HintsMessage.Result.NO_POINTS:
+            raise ADOSError(
+                f"You cannot afford a hint; you have {points.points_available} points available and need at least {points.points_required}"
+            )
 
     async def _send_hints(self, ctx: BotContext, hints: list[HintInfo]) -> None:
         if not hints:
-            await send_message(ctx, "There are no hints available for the selected slots", reply=True)
+            await send_message(ctx, "There are no hints available for the selected slots")
             return
 
         table: dict[str, list[str]] = {"Hinter": [], "Item": [], "Holder": [], "Location": [], "Status": []}
@@ -549,7 +573,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if len(hints) == 1:
             self_slot, item, other_slot, location, status = (column[0] for column in table.values())
             await send_message(
-                ctx, f"`{self_slot}`'s `{item}` is at `{location}` in `{other_slot}`'s world ({status})", reply=True
+                ctx,
+                f"{highlight(self_slot)}'s `{item}` is at `{location}` in `{highlight(other_slot)}`'s world ({status})",
+                reply=True,
             )
         else:
             await send_table(ctx, table, reply=True)
@@ -566,11 +592,11 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         server_statuses = (await self._socket.perform_request(StatusMessage, get_status_message())).statuses
         local_statuses = self._state.slot_checks_statuses()
 
-        full_statuses: dict[SlotInfo, FullSlotStatus] = {}
+        full_statuses: dict[SlotInfo, SlotFullStatus] = {}
         for slot_name, server_status in server_statuses.items():
             slot = self._state.resolve_slot(slot_name)
             local_status = local_statuses[slot]
-            full_statuses[slot] = FullSlotStatus(
+            full_statuses[slot] = SlotFullStatus(
                 found_checks=server_status.found_checks,
                 total_checks=server_status.total_checks,
                 self_freed_checks=local_status.self_freed,
@@ -580,7 +606,15 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             )
 
         full_statuses = dict(sorted(full_statuses.items(), key=lambda pair: pair[0].name))
-        await (send_checks_graph if flags.mode == StatsOutputMode.GRAPH else send_checks_table)(ctx, full_statuses)
+        await self._get_plotter(flags.mode).send_checks(ctx, full_statuses)
+
+    @commands.command(name="items", help="Outputs data on types of items sent/received per slot", ignore_extra=False)
+    async def items(self, ctx: BotContext, *, flags: StatsFlags) -> None:
+        item_counts = dict(sorted(self._state.slot_item_counts().items(), key=lambda pair: pair[0].name))
+        if not item_counts:
+            await send_message(ctx, "No items have been sent yet")
+            return
+        await self._get_plotter(flags.mode).send_items(ctx, item_counts)
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
     async def deaths(self, ctx: BotContext, *, flags: StatsFlags) -> None:
@@ -588,4 +622,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if not death_counts:
             await send_message(ctx, "No death links have been triggered yet")
             return
-        await (send_deaths_graph if flags.mode == StatsOutputMode.GRAPH else send_deaths_table)(ctx, death_counts)
+        await self._get_plotter(flags.mode).send_deaths(ctx, death_counts)
+
+    def _get_plotter(self, mode: StatsOutputMode) -> type[GraphPlotter] | type[TablePlotter]:
+        return GraphPlotter if mode == StatsOutputMode.GRAPH else TablePlotter

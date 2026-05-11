@@ -25,6 +25,7 @@ from ados.common import (
     LocationInfo,
     SentItemInfo,
     SlotInfo,
+    SlotItemCounts,
     SubscriptionType,
 )
 from ados.config import ADOSConfig
@@ -103,7 +104,8 @@ class GlobalState:
         self._game_location_ids_by_name: dict[str, dict[str, int]] = {}
         self._game_groups: dict[str, set[str]] = {}
 
-        # This is the information about slot items sends.
+        # This is the information about slot item sends.
+        self._item_counts: dict[int, SlotItemCounts] = defaultdict(SlotItemCounts)
         self._item_log = self._load_item_log()
 
         # This is the data which is persisted to disk on every update.
@@ -175,6 +177,7 @@ class GlobalState:
         )
 
         self._item_log.slot_items[message.to_slot_id].append(sent_item)
+        self._record_item_category(sent_item)
         with open(self._item_log_file, "a") as log_file:
             log_file.write(f"{json.dumps(sent_item._asdict())}\n")  # pylint: disable = protected-access
 
@@ -203,10 +206,20 @@ class GlobalState:
 
     @persist
     def _record_auto_item(self, from_slot_id: int, to_slot_id: int) -> None:
+        if from_slot_id == to_slot_id:
+            self._state.slot_self_freed[from_slot_id] += 1
+            return
         if from_slot_id in self._state.slots_released:
             self._state.slot_self_freed[from_slot_id] += 1
         if to_slot_id in self._state.slots_released:
             self._state.slot_other_freed[from_slot_id] += 1
+
+    def _record_item_category(self, info: SentItemInfo) -> None:
+        if info.from_slot_id == info.to_slot_id:
+            self._item_counts[info.from_slot_id].self_items[info.category] += 1
+        else:
+            self._item_counts[info.from_slot_id].sent_items[info.category] += 1
+            self._item_counts[info.to_slot_id].received_items[info.category] += 1
 
     def _load_item_log(self) -> ItemLogData:
         data = ItemLogData()
@@ -223,6 +236,7 @@ class GlobalState:
                 else:
                     sent_item = SentItemInfo(**json.loads(line))
                     data.slot_items[sent_item.to_slot_id].append(sent_item)
+                    self._record_item_category(sent_item)
 
         _log.info("Populated item log with %d sent items", sum(len(items) for items in data.slot_items.values()))
         return data
@@ -333,6 +347,9 @@ class GlobalState:
             for slot_id, slot in self._slots.items()
         }
 
+    def slot_item_counts(self) -> dict[SlotInfo, SlotItemCounts]:
+        return {self._slots[slot_id]: counts for slot_id, counts in self._item_counts.items()}
+
     ################################################
     ############## SLOT REGISTRATIONS ##############
     ################################################
@@ -419,8 +436,8 @@ class GlobalState:
         self._state.slot_subscriptions[slot.id].add(subscription)
 
     @persist
-    def remove_user_subscription(self, user_id: int, slot: Optional[SlotInfo], value: str) -> None:
-        value_norm = _normalize(value)
+    def remove_user_subscriptions(self, user_id: int, slot: Optional[SlotInfo], value: Optional[str]) -> None:
+        value_norm = _normalize(value) if value is not None else ""
         to_check_slots = [slot] if slot is not None else self.get_user_slots(user_id)
         for to_check_slot in to_check_slots:
             subscriptions = self._state.slot_subscriptions.get(to_check_slot.id, set())
@@ -429,5 +446,7 @@ class GlobalState:
             self._state.slot_subscriptions[to_check_slot.id] = {
                 subscription
                 for subscription in subscriptions
-                if not (subscription.user_id == user_id and value_norm in _normalize(subscription.value))
+                if not (
+                    subscription.user_id == user_id and (value is None or value_norm == _normalize(subscription.value))
+                )
             }

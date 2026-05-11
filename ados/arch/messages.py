@@ -3,7 +3,7 @@ import logging
 import re
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Iterator, NamedTuple
+from typing import Any, Iterator, NamedTuple, Optional
 
 from websockets.typing import Data
 
@@ -241,7 +241,13 @@ class HintPointsMessage:
 
 # Sent by the server to notify a client of a collection of hints for a slot.
 class HintsMessage:
-    def __init__(self, data: list[dict[str, Any]]) -> None:
+
+    class Result(str, Enum):
+        SUCCESS = "success"
+        NOT_FOUND = "not found"
+        NO_POINTS = "no points"
+
+    def __init__(self, data: Optional[list[dict[str, Any]]] = None, result: Result = Result.SUCCESS) -> None:
         def _get_status(info: dict[str, Any]) -> HintStatus:
             for info_element in info.get("data", [])[::-1]:
                 if "hint_status" in info_element:
@@ -257,8 +263,9 @@ class HintsMessage:
                 found=info["found"],
                 status=_get_status(info),
             )
-            for info in data
+            for info in data or []
         ]
+        self.result = result
 
 
 # Sent by the server in response to a status request, outlining the found/total check counts for all slots.
@@ -352,6 +359,18 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 and message.get("data", [{}])[0].get("text", "").startswith("A hint costs")
             ):
                 yield HintPointsMessage(message)
+            elif (
+                cmd == "PrintJSON"
+                and message.get("type") == "CommandResult"
+                and "Nothing found for recognized" in message.get("data", [{}])[0].get("text", "")
+            ):
+                yield HintsMessage(result=HintsMessage.Result.NOT_FOUND)
+            elif (
+                cmd == "PrintJSON"
+                and message.get("type") == "CommandResult"
+                and "You can't afford the hint" in message.get("data", [{}])[0].get("text", "")
+            ):
+                yield HintsMessage(result=HintsMessage.Result.NO_POINTS)
             elif (
                 cmd == "PrintJSON"
                 and message.get("type") == "CommandResult"

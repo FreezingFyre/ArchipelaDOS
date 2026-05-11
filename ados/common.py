@@ -1,3 +1,4 @@
+from collections import defaultdict
 from enum import Enum
 from typing import Any, Iterable, NamedTuple
 
@@ -119,10 +120,18 @@ class HintInfo(NamedTuple):
 
 # Encodes the full (relevant) status of a slot, including checks that were checked
 # in various categories as well as whether the slot is finished.
-class FullSlotStatus(NamedTuple):
+class SlotFullStatus(NamedTuple):
     found_checks: int
     total_checks: int
     self_freed_checks: int
     other_freed_checks: int
     goal_completed: bool
     has_released: bool
+
+
+# Encodes all of the items sent and received by a slot, grouped by item category
+class SlotItemCounts:
+    def __init__(self) -> None:
+        self.sent_items: dict[ItemCategory, int] = defaultdict(int)
+        self.received_items: dict[ItemCategory, int] = defaultdict(int)
+        self.self_items: dict[ItemCategory, int] = defaultdict(int)
