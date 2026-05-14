@@ -18,7 +18,7 @@ from ados.arch.socket import SocketClient
 from ados.common import ItemCategory, ItemCategoryFilter
 from ados.config import ADOSConfig, BroadcastCategory
 from ados.discord.common import highlight
-from ados.state import GlobalState
+from ados.state import RoomState
 
 _log = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class BroadcastConfig:
 # Discord channels, as specified by the configuration.
 class MessageBroadcaster:
 
-    def __init__(self, config: ADOSConfig, socket: SocketClient, state: GlobalState, client: discord.Client):
+    def __init__(self, config: ADOSConfig, socket: SocketClient, state: RoomState, client: discord.Client):
         self._socket = socket
         self._state = state
         self._client = client

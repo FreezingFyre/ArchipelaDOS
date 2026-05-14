@@ -3,6 +3,7 @@ from typing import Optional, cast
 
 import discord
 import matplotlib.pyplot as plt
+from matplotlib.container import BarContainer
 
 from ados.common import ItemCategory, SlotFullStatus, SlotInfo, SlotItemCounts
 from ados.discord.common import BotContext, send_table
@@ -176,6 +177,7 @@ class GraphPlotter:
     ) -> None:
         plt.figure(figsize=(max(8, len(columns) * 0.5), 6))
 
+        top: Optional[BarContainer] = None
         for idx, values in enumerate(bar_values):
             current = (
                 [sum(vals) for vals in zip(*(other_values for other_values in bar_values[:idx]))] if idx > 0 else None

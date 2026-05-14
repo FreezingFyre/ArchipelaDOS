@@ -21,9 +21,13 @@ from ados.discord.broadcast import MessageBroadcaster
 from ados.discord.commands import Commands
 from ados.discord.common import COMMAND_PREFIX, BotContext, send_failure
 from ados.discord.help import HelpCommand
-from ados.state import GlobalState
+from ados.state import RoomState
 
 _log = logging.getLogger(__name__)
+
+
+# Discord will warn about PyNaCl not being installed if this is not set.
+discord.VoiceClient.warn_nacl = False
 
 
 # The main ArchipelaDOS Discord bot class. Handles processing of user commands, sending
@@ -44,7 +48,7 @@ class ADOSBot(commands.Bot):
 
         self._web = WebClient(config)
         self._socket = SocketClient(config, slot_name=config.archipelago_slot, game=config.archipelago_game)
-        self._state = GlobalState(config, self._socket)
+        self._state = RoomState(config, self._socket)
         self._broadcaster = MessageBroadcaster(config, self._socket, self._state, self)
 
         bot_commands = Commands(config, self._web, self._socket, self._state)

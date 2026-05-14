@@ -42,7 +42,7 @@ from ados.discord.common import (
     send_table,
 )
 from ados.discord.plotting import GraphPlotter, TablePlotter
-from ados.state import GlobalState
+from ados.state import RoomState
 
 _log = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class TimeDeltaArg(commands.Converter[timedelta]):
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, config: ADOSConfig, web: WebClient, socket: SocketClient, state: GlobalState):
+    def __init__(self, config: ADOSConfig, web: WebClient, socket: SocketClient, state: RoomState):
         super().__init__()
         self._config = config
         self._web = web

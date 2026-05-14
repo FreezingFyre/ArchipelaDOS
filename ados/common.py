@@ -1,6 +1,16 @@
+import functools
+import json
+import logging
+import os
 from collections import defaultdict
+from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable, NamedTuple
+from types import get_original_bases
+from typing import Any, Callable, Iterable, NamedTuple, Self, get_args
+
+from pydantic import BaseModel
+
+_log = logging.getLogger(__name__)
 
 
 # Thrown to send a particular error message to the user through Discord.
@@ -12,6 +22,12 @@ class ADOSError(Exception):
 def join_objects(objects: Iterable[Any]) -> str:
     object_names = [f"`{obj}`" for obj in objects]
     return ", ".join(sorted(object_names))
+
+
+# Normalization function so that user input can match names in a case-insensitive,
+# purely alphanumeric way.
+def normalize(value: str) -> str:
+    return "".join(c for c in value.lower() if c.isalnum())
 
 
 # Defined item categories for use in commands and messages. These can technically
@@ -135,3 +151,61 @@ class SlotItemCounts:
         self.sent_items: dict[ItemCategory, int] = defaultdict(int)
         self.received_items: dict[ItemCategory, int] = defaultdict(int)
         self.self_items: dict[ItemCategory, int] = defaultdict(int)
+
+
+# Multiple classes in ArchipelaDOS require state to be persisted to disk, which is loaded
+# on startup. This base class makes it easy to do so, providing the state via a member
+# and persistence via a decorator.
+class Persisted[T: BaseModel]:
+
+    _state_type: type[T]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._state_type = get_args(get_original_bases(cls)[0])[0]
+
+    def __init__(self, state_file: str) -> None:
+        self._state_file = state_file
+        self._state = self._load_state()
+        self._save_state()
+
+    def _load_state(self) -> T:
+        # If the file doesn't exist, return a fresh state.
+        if not os.path.exists(self._state_file):
+            _log.info(
+                "State file '%s' for %s does not exist; starting fresh", self._state_file, self._state_type.__name__
+            )
+            return self._state_type()
+
+        try:
+            with open(self._state_file, "r") as data_file:
+                _log.info("Loading state file '%s' for %s", self._state_file, self._state_type.__name__)
+                return self._state_type(**json.load(data_file))
+        except Exception as ex:
+            # If there's a validation (or other) error, back up the invalid file so it can be
+            # inspected later, then start fresh.
+            _log.error("Failed to load state file '%s' for %s: %s", self._state_file, self._state_type.__name__, ex)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = self._state_file.replace(".json", f".invalid_{timestamp}.json")
+            os.rename(self._state_file, backup_path)
+            _log.info("Backed up invalid state file to '%s'; starting fresh", backup_path)
+            return self._state_type()
+
+    def _save_state(self) -> None:
+        with open(self._state_file, "w") as data_file:
+            data_file.write(self._state.model_dump_json(indent=4))
+
+    def _clear_state(self) -> None:
+        self._state = self._state_type()
+        self._save_state()
+
+    # Decorator which will persist the state after the method is called.
+    @staticmethod
+    def persist[U](func: Callable[..., U]) -> Callable[..., U]:
+        @functools.wraps(func)
+        def _wrapper(self: Self, *args: Any, **kwargs: Any) -> U:
+            result = func(self, *args, **kwargs)
+            self._save_state()  # pylint: disable = protected-access
+            return result
+
+        return _wrapper
