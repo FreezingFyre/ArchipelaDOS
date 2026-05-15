@@ -1,18 +1,20 @@
+import asyncio
 import logging
 import re
+from datetime import timedelta
 from typing import Optional
 
 from aiohttp import ClientSession, ClientTimeout
 
 from ados.common import ADOSError
-from ados.config import ADOSConfig
 
 _log = logging.getLogger(__name__)
 
 BASE_URL = "archipelago.gg"
-
 TRACKER_REGEX = re.compile(r"This room has a <a href=\"/tracker/(.*)\">Multiworld Tracker</a>")
 PORT_REGEX = re.compile(r"running on archipelago.gg with port (\d*)")
+
+RETRY_DELAYS = [timedelta(seconds=x) for x in (0, 2, 5, 10)]
 
 
 # Provides access to the data served by the Archipelago web interface. Stores a cached
@@ -20,8 +22,8 @@ PORT_REGEX = re.compile(r"running on archipelago.gg with port (\d*)")
 # requests to archipelago.gg.
 class WebClient:
 
-    def __init__(self, config: ADOSConfig):
-        self._room_url = f"https://{BASE_URL}/room/{config.archipelago_room}"
+    def __init__(self, room_url: str):
+        self._room_url = room_url
         self._tracker_url: Optional[str] = None
         self._server_url: Optional[str] = None
 
@@ -41,18 +43,28 @@ class WebClient:
 
         _log.info("Refreshing web information from '%s'", self.room_url)
 
-        async with ClientSession(timeout=ClientTimeout(5)) as http_session:
-            async with http_session.get(f"{self.room_url}?update") as http_ret:
-                if not http_ret.ok:
-                    raise ADOSError(f"Failed to access room at '{self.room_url}' (status code {http_ret.status})")
+        for delay in RETRY_DELAYS:
+            try:
+                await asyncio.sleep(delay.total_seconds())
+                async with ClientSession(timeout=ClientTimeout(10)) as http_session:
+                    async with http_session.get(f"{self.room_url}?update") as http_ret:
+                        if not http_ret.ok:
+                            raise ADOSError(
+                                f"Failed to access room at '{self.room_url}' (status code {http_ret.status})"
+                            )
+                        http_text = await http_ret.text()
+                break
+            except Exception as ex:
+                _log.warning("Failed to refresh web information at '%s': %s", self.room_url, ex)
+        else:
+            raise ADOSError(f"Failed to refresh web information at '{self.room_url}' after multiple attempts")
 
-                http_text = await http_ret.text()
-                tracker_match = TRACKER_REGEX.search(http_text)
-                port_match = PORT_REGEX.search(http_text)
-                if not tracker_match or not port_match:
-                    raise ADOSError(f"Failed to parse URL information at '{self.room_url}'")
+        tracker_match = TRACKER_REGEX.search(http_text)
+        port_match = PORT_REGEX.search(http_text)
+        if not tracker_match or not port_match:
+            raise ADOSError(f"Failed to parse URL information at '{self.room_url}'")
 
-                self._tracker_url = f"https://{BASE_URL}/tracker/{tracker_match.group(1)}"
-                self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
+        self._tracker_url = f"https://{BASE_URL}/tracker/{tracker_match.group(1)}"
+        self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
 
         _log.info("Completed web information refresh; server is running at '%s'", self.server_url)

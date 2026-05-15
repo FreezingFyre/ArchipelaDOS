@@ -1,21 +1,3 @@
-################
-# CORE OPTIONS #
-################
-
-# The Archipelago room to connect to. This is the identifier found after room/ in the URL
-# of the room. For example, in https://archipelago.gg/room/93eBTEhDS_uu9-JsAl5YbQ, the room
-# ID is "93eBTEhDS_uu9-JsAl5YbQ".
-archipelago_room: null
-
-# The Archipelago slot name to use when connecting. This can be any slot in the multiworld
-# if you did not include ArchipelaDOS.yaml during generation.
-archipelago_slot: ArchipelaDOS
-
-# The Archipelago game to use when connecting. Change this to be the game corresponding to the
-# archipelago_slot if you did not include ArchipelaDOS.yaml during generation.
-archipelago_game: Archipelago
-
-
 ###################
 # DISCORD OPTIONS #
 ###################
@@ -42,6 +24,7 @@ discord_command_channels: []
 #   - "player_chat": Broadcast when a player sends a chat message.
 #   - "server_chat": Broadcast when the server sends a global chat message.
 #   - "goal_reached": Broadcast when a player reaches their goal.
+#   - "admin_alerts": Broadcast alerts related to bot status, like when it disconnects.
 discord_broadcast_channels: {}
 
 
@@ -57,12 +40,6 @@ data_path: data
 # with one message per line, where each line includes a {player} token that will be replaced
 # with the name of the player who died.
 death_link_messages_path: null
-
-# For some messages sent from Archipelago, a player name will be provided instead of a slot name
-# or ID. This can happen for, say, death links from multiplayer games (like Minecraft, Raft),
-# which may provide a particular player's name. This setting links a list of player names to a slot
-# name, so that death links can be properly tracked per slot in these cases.
-slot_players: {}
 
 # The minimum logging level to record. Must be one of: "debug", "info", "warning", "error", "critical".
 logging_level: info

@@ -34,15 +34,12 @@ class BroadcastCategory(str, Enum):
     PLAYER_CHAT = "player_chat"
     SERVER_CHAT = "server_chat"
     GOAL_REACHED = "goal_reached"
+    ADMIN_ALERTS = "admin_alerts"
 
 
 # The main configuration class for ArchipelaDOS. Loaded from a YAML file on startup with strict
 # validation enforced by pydantic.
 class ADOSConfig(BaseModel):
-
-    archipelago_room: str
-    archipelago_slot: str
-    archipelago_game: str
 
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure.
     discord_token: str = Field(..., exclude=True, repr=False)
@@ -52,14 +49,9 @@ class ADOSConfig(BaseModel):
 
     data_path: Annotated[str, BeforeValidator(_expand_path)]
     death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
-    slot_players: dict[str, set[str]]
 
     logging_level: Annotated[int, BeforeValidator(_transform_logging_level)]
     logging_color: bool
-
-    @property
-    def room_data_path(self) -> str:
-        return os.path.join(self.data_path, self.archipelago_room)
 
     # Serializes the int logging level to a string when dumping to JSON or other formats.
     @field_serializer("logging_level")
@@ -80,6 +72,11 @@ class ADOSConfig(BaseModel):
                 raise ValueError(
                     f"broadcast channel config cannot contain multiple of {[category.value for category in item_categories]}"
                 )
+        for categories in self.discord_broadcast_channels.values():
+            if not categories or BroadcastCategory.ADMIN_ALERTS in categories:
+                break
+        else:
+            raise ValueError("at least one broadcast channel must be configured to receive 'admin_alerts'")
         return self
 
 

@@ -37,16 +37,20 @@ class ColorFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def initialize_logging(config: ADOSConfig) -> None:
-
-    log = logging.getLogger()
-
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(ColorFormatter() if config.logging_color else BasicFormatter())
-    log.addHandler(console_handler)
-    log.setLevel(config.logging_level)
-
-    file_path = os.path.join(config.room_data_path, "ados.log")
+def add_logging_handler(file_path: str) -> logging.FileHandler:
     file_handler = logging.FileHandler(file_path, mode="a")
     file_handler.setFormatter(BasicFormatter())
-    log.addHandler(file_handler)
+    logging.getLogger().addHandler(file_handler)
+    return file_handler
+
+
+def remove_logging_handler(file_handler: logging.FileHandler) -> None:
+    logging.getLogger().removeHandler(file_handler)
+
+
+def initialize_logging(config: ADOSConfig) -> None:
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(ColorFormatter() if config.logging_color else BasicFormatter())
+    logging.getLogger().addHandler(console_handler)
+    logging.getLogger().setLevel(config.logging_level)
+    add_logging_handler(os.path.join(config.data_path, "ados.log"))

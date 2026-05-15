@@ -23,7 +23,7 @@ The Discord portion of the setup should be a one-time deal. You will create a bo
 
 ## Bot setup
 
-Setting up the bot is also a one-time deal. After you've set it up once (for a particular version), you can re-run the same bot for a different Archipelago room with minor configuration tweaks.
+Setting up the bot is also a one-time deal. After you've set it up once (for a particular version), you can run it persistently while connecting/disconnecting from Archipelago rooms via Discord commands.
 
 ### Manual
 
@@ -73,11 +73,8 @@ services:
 
 All bot configuration is done through the `config.yaml` file in the ArchipelaDOS installation folder. The configuration is well-documented there, and should be relatively self-explanatory. Still, the important configurations are described here.
 
-Note that, in order for ArchipelaDOS to communicate with your Archipelago multiworld, it needs to do so through a slot. If you generate your multiworld with the `ArchipelaDOS.yaml` provided in the realease, it will add its own slot that you do not need to configure. Otherwise, you will need to change the configuration to connect through a different slot (which must be password-less).
-
 The following configurations are *essential* to set:
 
-- `archipelago_room`: The room ID for your multiworld hosted on archipelago.gg
 - `discord_token`: The token for your Discord bot, copied in step \#2 of [Discord setup](#discord-setup) above
 - `discord_server`: The name of the server in which ArchipelaDOS should operate
 - `discord_command_channels`: A list of channels in which ArchipelaDOS should listen for, and repond to, user commands
@@ -95,13 +92,11 @@ The following configurations are *essential* to set:
         ```
     - Note that `progression_items`, `useful_items`, and `all_items` are different filter levels for item send messages, and are mutually exclusive. Traps will only be broadcast if `trap_items` are configured.
 
-The following configurations may need to be set, depending on your setup:
-
-- `archipelago_slot`: If you did not generate your multiworld with `ArchipelaDOS.yaml`, change this to a slot that ArchipelaDOS can use when connecting to the server
-- `archipelago_game`: The game for the slot configured in `archipelago_slot`
-- `death_link_messages_path`: A filename containing custom death link notifications
+A fun feature of the bot is the ability to set custom death link messages. If you'd like to enable this functionality, set the `death_link_messages_path` configuration.
 
 ## Running the bot
+
+Note that, in order for ArchipelaDOS to communicate with your Archipelago multiworld, it needs to do so through a slot. If you generate your multiworld with the `ArchipelaDOS.yaml` provided in the realease, it will add its own slot that you do not need to configure. Otherwise, you will need to choose a different (password-less) slot to specify at time of connection.
 
 Once your bot environment is set up, and you've configured it appropriately in `config.yaml`, you can actually run ArchipelaDOS. If using Docker, it's as simple as starting the Docker container as one would typically. If running manually, you can:
 
@@ -114,3 +109,12 @@ Once your bot environment is set up, and you've configured it appropriately in `
 3. Run the bot:
     - `python server.py`
     - `python server.py <config_file>` if you want to use a config file besides `config.yaml`
+
+Once the bot is running, use the `!room connect` command in Discord to connect the bot to a room/multiworld. The bot supports connecting to rooms hosted on archipelago.gg as well as those that are self-hosted. Some examples of valid `!room connect` commands:
+
+- `!room connect N1J-OYhZRO-FBFcY-bMdea`
+- `!room connect https://archipelago.gg/room/N1J-OYhZRO-FBFcY-bMdea`
+- `!room connect wss://myownserver.net:54545`
+- `!room connect N1J-OYhZRO-FBFcY-bMdea slot: MySlot game: OtherGame`
+
+Once the bot has been connected to a room, that active connection and data related to it will persist even if the bot is restarted. The active room is only disconnected after using the Discord command `!room finalize`, after which a new room can be connected.

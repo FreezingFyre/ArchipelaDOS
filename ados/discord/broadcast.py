@@ -45,6 +45,7 @@ class BroadcastConfig:
             self.send_player_chat = False
             self.send_server_chat = False
             self.send_goal_reached = False
+            self.send_admin_alerts = False
         else:
             self.item_filter = ItemCategoryFilter.ALL
             self.send_traps = True
@@ -53,6 +54,7 @@ class BroadcastConfig:
             self.send_player_chat = True
             self.send_server_chat = True
             self.send_goal_reached = True
+            self.send_admin_alerts = True
 
         for category in categories:
             if category == BroadcastCategory.PROGRESSION_ITEMS:
@@ -73,6 +75,8 @@ class BroadcastConfig:
                 self.send_server_chat = True
             elif category == BroadcastCategory.GOAL_REACHED:
                 self.send_goal_reached = True
+            elif category == BroadcastCategory.ADMIN_ALERTS:
+                self.send_admin_alerts = True
 
 
 # Broadcasts messages sent from the Archipelago socket connection to the various
@@ -128,6 +132,13 @@ class MessageBroadcaster:
             self._broadcast_task = None
         self._channels.clear()
 
+    def admin_alert(self, message: str) -> None:
+        channel_names = self._filter_channels(lambda config: config.send_admin_alerts)
+        content = f":loud_sound: *{message}*"
+
+        _log.info("Sending admin alert message: '%s'", message)
+        self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
+
     def _load_death_link_messages(self, path: Optional[str]) -> list[str]:
 
         if not path:
@@ -146,7 +157,7 @@ class MessageBroadcaster:
                     else:
                         bad_messages.append(line)
         except Exception as ex:
-            _log.error("Error loading death link messages from '%s': %s", path, str(ex))
+            _log.error("Error loading death link messages from '%s': %s", path, ex)
             return DEFAULT_DEATH_LINK_MESSAGES
 
         _log.info("Loaded %d death link messages from '%s'", len(messages), path)
@@ -178,7 +189,7 @@ class MessageBroadcaster:
                         continue
                     await channel.send(content)
             except Exception as ex:
-                _log.error("Error broadcasting message to channels %s: %s", item.channel_names, str(ex))
+                _log.error("Error broadcasting message to channels %s: %s", item.channel_names, ex)
 
     # This is the core functionality of the broadcaster: handling an item being sent in the
     # multiworld. These are subject to a variety of filters based on channel configuration,

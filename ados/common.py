@@ -195,11 +195,6 @@ class Persisted[T: BaseModel]:
         with open(self._state_file, "w") as data_file:
             data_file.write(self._state.model_dump_json(indent=4))
 
-    def _clear_state(self) -> None:
-        self._state = self._state_type()
-        self._save_state()
-
-    # Decorator which will persist the state after the method is called.
     @staticmethod
     def persist[U](func: Callable[..., U]) -> Callable[..., U]:
         @functools.wraps(func)

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Optional
 
@@ -12,16 +11,12 @@ from discord.ext.commands.errors import (
     UserInputError,
 )
 
-from ados.arch.messages import ConnectionClosedMessage
-from ados.arch.socket import SocketClient
-from ados.arch.web import WebClient
 from ados.common import ADOSError
 from ados.config import ADOSConfig
-from ados.discord.broadcast import MessageBroadcaster
 from ados.discord.commands import Commands
 from ados.discord.common import COMMAND_PREFIX, BotContext, send_failure
 from ados.discord.help import HelpCommand
-from ados.state import RoomState
+from ados.room import ActiveRoomManager
 
 _log = logging.getLogger(__name__)
 
@@ -41,32 +36,24 @@ class ADOSBot(commands.Bot):
         super().__init__(command_prefix=COMMAND_PREFIX, intents=intents, help_command=help_command)
 
         # Guild and channel IDs start unset, and are populated in on_ready().
-        self._connected = False
         self._config = config
         self._guild: Optional[discord.Guild] = None
         self._command_channel_ids: set[int] = set()
 
-        self._web = WebClient(config)
-        self._socket = SocketClient(config, slot_name=config.archipelago_slot, game=config.archipelago_game)
-        self._state = RoomState(config, self._socket)
-        self._broadcaster = MessageBroadcaster(config, self._socket, self._state, self)
+        self._room_manager = ActiveRoomManager(config, self)
 
-        bot_commands = Commands(config, self._web, self._socket, self._state)
+        bot_commands = Commands(config, self._room_manager)
         self.add_cog(bot_commands)
-
-        self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)
 
     async def execute(self) -> None:
         _log.info("Starting ArchipelaDOS bot with configuration: %s", self._config.model_dump_json())
-        await self._web.refresh()
-        await self._socket.connect(self._web.server_url, fetch_data=True)
+        await self._room_manager.initialize()
         await super().start(self._config.discord_token)
         _log.info("Stopping ArchipelaDOS bot")
 
     async def on_ready(self) -> None:
         _log.info("Connected to Discord with ID: %d", self.application_id)
 
-        self._connected = True
         self._guild = None
         self._command_channel_ids.clear()
 
@@ -92,17 +79,16 @@ class ADOSBot(commands.Bot):
                 self._config.discord_server,
             )
 
-        self._broadcaster.start(self._guild)
+        self._room_manager.start_broadcasting(self._guild)
 
     async def on_disconnect(self) -> None:
         _log.warning("Disconnected from Discord, reconnect will be attempted automatically")
-        self._connected = False
-        self._broadcaster.stop()
+        self._room_manager.stop_broadcasting()
 
     async def on_resumed(self) -> None:
         assert self._guild is not None
         _log.info("Reconnected to Discord with ID: %d", self.application_id)
-        self._broadcaster.start(self._guild)
+        self._room_manager.start_broadcasting(self._guild)
 
     async def on_message(self, message: discord.Message) -> None:
 
@@ -140,24 +126,3 @@ class ADOSBot(commands.Bot):
         else:
             _log.error("Unexpected error processing user command '%s': %s", context.message.content, exception)
             await send_failure(context, "Something went wrong while processing your command.")
-
-    # If the socket disconnects, we want to refresh the room and attempt a reconnect before
-    # erroring out.
-    def _on_socket_disconnected(self, _: ConnectionClosedMessage) -> None:
-
-        async def _reconnect_task() -> None:
-            _log.warning("Socket disconnected; attempting to refresh room and reconnect")
-            try:
-                await self._web.refresh()
-                await self._socket.connect(self._web.server_url, fetch_data=False)
-                _log.info("Socket successfully reconnected after disconnect")
-            except Exception as ex:
-                _log.error("Failed to reconnect socket after disconnect: %s", ex)
-                assert self._guild is not None
-                for channel in self._guild.text_channels:
-                    if channel.name in self._config.discord_broadcast_channels:
-                        await channel.send(
-                            f":red_circle:  *Lost connection to Archipelago server. Use {COMMAND_PREFIX}room refresh to attempt a reconnect.*"
-                        )
-
-        asyncio.create_task(_reconnect_task())

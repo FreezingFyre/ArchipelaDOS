@@ -20,7 +20,6 @@ from ados.arch.messages import (
     get_item_groups_message,
 )
 from ados.common import ADOSError
-from ados.config import ADOSConfig
 
 _log = logging.getLogger(__name__)
 
@@ -34,12 +33,11 @@ MAX_LOG_SIZE = 4096
 # for specific message types.
 class SocketClient:
 
-    def __init__(self, config: ADOSConfig, *, slot_name: str, game: str):
-        self._config = config
+    def __init__(self, *, slot_name: str, game: str):
         self._game = game
         self._slot_name = slot_name
 
-        self._handlers: dict[type[ServerMessage], list[Callable[[Any], None]]] = defaultdict(list)
+        self._handlers: dict[type[ServerMessage], list[Callable[[Any], Any]]] = defaultdict(list)
         self._request_locks: dict[type[ServerMessage], asyncio.Lock] = defaultdict(asyncio.Lock)
         self._request_futures: dict[type[ServerMessage], asyncio.Future[Any]] = {}
 
@@ -67,7 +65,7 @@ class SocketClient:
     # Allows other classes to handle incoming messages. The first argument is the type
     # of message to handle, and the second is the function to be called when that message
     # is received.
-    def add_message_handler(self, message_type: type[ServerMessage], handler: Callable[[Any], None]) -> None:
+    def add_message_handler(self, message_type: type[ServerMessage], handler: Callable[[Any], Any]) -> None:
         self._handlers[message_type].append(handler)
 
     # Some messages follow a request-response pattern, though the server still sends the
@@ -158,6 +156,7 @@ class SocketClient:
             _log.warning(
                 "Connection to websocket server at '%s' for slot '%s' closed: %s", self._server_url, self._slot_name, ex
             )
+            self._handle_message(ConnectionClosedMessage())
         except Exception as ex:
             _log.warning(
                 "Unexpected error in connection to websocket server at '%s' for slot '%s': %s",
@@ -165,7 +164,7 @@ class SocketClient:
                 self._slot_name,
                 ex,
             )
-        self._handle_message(ConnectionClosedMessage())
+            self._handle_message(ConnectionClosedMessage())
 
     def _handle_message(self, message: ServerMessage) -> None:
         for handler in self._handlers.get(type(message), []):

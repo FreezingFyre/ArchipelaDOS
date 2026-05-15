@@ -30,7 +30,6 @@ from ados.common import (
     SubscriptionType,
     normalize,
 )
-from ados.config import ADOSConfig
 
 _log = logging.getLogger(__name__)
 
@@ -77,12 +76,10 @@ class ItemLogData:
 # from the server, such as slot details and item mappings.
 class RoomState(Persisted[RoomStateData]):
 
-    def __init__(self, config: ADOSConfig, socket: SocketClient):
+    def __init__(self, data_path: str, socket: SocketClient):
 
-        super().__init__(os.path.join(config.room_data_path, "state.json"))
-
-        self._config = config
-        self._item_log_file = os.path.join(config.room_data_path, "itemlog.txt")
+        super().__init__(os.path.join(data_path, "state.json"))
+        self._item_log_file = os.path.join(data_path, "itemlog.txt")
 
         self._slots: dict[int, SlotInfo] = {}
         self._slot_ids_by_name: dict[str, int] = {}
@@ -113,13 +110,6 @@ class RoomState(Persisted[RoomStateData]):
         self._slot_ids_by_name = {normalize(slot.name): slot.id for slot in message.slots}
         self._slot_ids_by_name.update({normalize(slot.alias): slot.id for slot in message.slots})
         self._slot_ids_by_name.update({normalize(str(slot)): slot.id for slot in message.slots})
-        for slot, players in self._config.slot_players.items():
-            slot_norm = normalize(slot)
-            if slot_norm not in self._slot_ids_by_name:
-                _log.warning("Could not assign players to nonexistent slot '%s'", slot)
-                continue
-            slot_id = self._slot_ids_by_name[slot_norm]
-            self._slot_ids_by_name.update({normalize(player): slot_id for player in players})
         _log.info("Populated slot information for %d slots", len(message.slots))
 
     # The DataPackageMessage is sent once on startup, to populate item and location mappings

@@ -1,8 +1,7 @@
 import asyncio
-import logging
 import random
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 from typing import Optional, cast
 
@@ -18,8 +17,6 @@ from ados.arch.messages import (
     get_hint_message,
     get_status_message,
 )
-from ados.arch.socket import SocketClient
-from ados.arch.web import WebClient
 from ados.common import (
     ADOSError,
     HintInfo,
@@ -42,12 +39,8 @@ from ados.discord.common import (
     send_table,
 )
 from ados.discord.plotting import GraphPlotter, TablePlotter
+from ados.room import ActiveRoomManager
 from ados.state import RoomState
-
-_log = logging.getLogger(__name__)
-
-SOCKET_CLEANUP_INTERVAL = timedelta(minutes=1)
-SOCKET_CLEANUP_INACTIVITY_THRESHOLD = timedelta(minutes=5)
 
 
 def _strip_quotes(value: str) -> str:
@@ -69,7 +62,7 @@ class SlotInfoArg(commands.Converter[SlotInfo]):
     async def convert(self, ctx: BotContext, argument: str) -> SlotInfo:
         try:
             assert isinstance(ctx.cog, Commands)
-            return ctx.cog._state.resolve_slot(_strip_quotes(argument))  # pylint: disable = protected-access
+            return ctx.cog.state.resolve_slot(_strip_quotes(argument))
         except ADOSError as ex:
             raise UserInputError(str(ex)) from ex
 
@@ -99,55 +92,20 @@ class TimeDeltaArg(commands.Converter[timedelta]):
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, config: ADOSConfig, web: WebClient, socket: SocketClient, state: RoomState):
+    def __init__(self, config: ADOSConfig, room_manager: ActiveRoomManager):
         super().__init__()
         self._config = config
-        self._web = web
-        self._socket = socket
-        self._state = state
+        self._room_manager = room_manager
 
-        self._slot_sockets: dict[SlotInfo, tuple[datetime, SocketClient]] = {}
-        self._sockets_cleanup_task = asyncio.create_task(self._sockets_cleanup_loop())
-
-    # For hint commands, a socket needs to be created that will connect to the Archipelago server as
-    # that slot. We do not want a connection perpetually open for every slot, but we also want repeated
-    # hint commands to not necessarily suffer the cost of connecting to the server every time. So slot-
-    # specific sockets are created when needed, and cleaned up after a period of inactivity.
-    async def _get_slot_socket(self, slot: SlotInfo) -> SocketClient:
-        if slot in self._slot_sockets:
-            socket = self._slot_sockets[slot][1]
-        else:
-            _log.info("Creating new socket for slot '%s'", slot)
-            socket = SocketClient(self._config, slot_name=slot.name, game=slot.game)
-            await socket.connect(self._web.server_url, fetch_data=False)
-        self._slot_sockets[slot] = (datetime.now(), socket)
-        return socket
-
-    # Socket cleanup logic runs on a regular cadence, defined by the SOCKET_CLEANUP variables.
-    async def _sockets_cleanup_loop(self) -> None:
-
-        async def _cleanup_job() -> None:
-            for slot in list(self._slot_sockets.keys()):
-                last_used, socket = self._slot_sockets[slot]
-                if datetime.now() - last_used > SOCKET_CLEANUP_INACTIVITY_THRESHOLD:
-                    _log.info("Cleaning up socket for slot '%s' due to inactivity", slot)
-                    await socket.disconnect()
-                    self._slot_sockets.pop(slot)
-
-        while True:
-            try:
-                await asyncio.gather(
-                    _cleanup_job(),
-                    asyncio.sleep(SOCKET_CLEANUP_INTERVAL.total_seconds()),
-                )
-            except Exception as ex:
-                _log.error("Error during socket cleanup: %s", str(ex))
+    @property
+    def state(self) -> RoomState:
+        return self._room_manager.active_room.state
 
     def _resolve_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
         if flag_slot is not None:
             return [cast(SlotInfo, flag_slot)]
 
-        slots = self._state.get_user_slots(ctx.author.id)
+        slots = self.state.get_user_slots(ctx.author.id)
         if len(slots) == 0:
             raise ADOSError("You are not registered for any slots; either register or specify a slot")
         return slots
@@ -196,28 +154,38 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     ########### ROOM MANAGEMENT COMMANDS ###########
     ################################################
 
-    @commands.group(name="room", help="Interact with the room", invoke_without_command=True)  # type: ignore[arg-type]
+    class RoomFlags(commands.FlagConverter):
+        id_or_url: str = commands.flag(positional=True)
+        slot: str = "ArchipelaDOS"  # We don't resolve this with SlotInfoArg since the bot will not be connected yet.
+        game: str = "Archipelago"
+
+    @commands.group(name="room", help="Set and interact with the active room", invoke_without_command=True)  # type: ignore[arg-type]
     async def room(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}room`")
 
-    @room.command(name="info", help="Get information about the Archipelago room", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
+    @room.command(name="connect", help="Connect to a new Archipelago room via room ID or socket URL", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
+    async def room_connect(self, ctx: BotContext, *, flags: RoomFlags) -> None:
+        await self._room_manager.connect(flags.id_or_url, flags.slot, flags.game)
+        await send_success(ctx, f"Connected to new room at <{self._room_manager.active_room.location}>")
+
+    @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    async def room_finalize(self, ctx: BotContext) -> None:
+        location = self._room_manager.active_room.location
+        await self._room_manager.disconnect()
+        await send_success(ctx, f"Disconnected from room at <{location}>")
+
+    @room.command(name="info", help="Get information about the Archipelago room", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def room_info(self, ctx: BotContext) -> None:
-        port = self._web.server_url.split(":")[-1]
-        slot_names_joined = join_objects(self._state.all_slots())
-        message = [
-            "Room information:",
-            f"- Port: {port}",
-            f"- Room URL: <{self._web.room_url}>",
-            f"- Tracker URL: <{self._web.tracker_url}>",
-            f"- Available slots: {slot_names_joined}",
-        ]
+        slot_names_joined = join_objects(self.state.all_slots())
+        message = ["Room information"]
+        message.extend(f"- {key}: {value}" for key, value in self._room_manager.active_room.get_info().items())
+        message.append(f"- Available slots: {slot_names_joined}")
         await send_message(ctx, "\n".join(message))
 
-    @room.command(name="refresh", help="Refresh the room on archipelago.gg, reconnecting the bot if it got disconnected", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    @room.command(name="refresh", help="Refresh the room on archipelago.gg, reconnecting the bot if it got disconnected", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def room_refresh(self, ctx: BotContext) -> None:
-        await self._web.refresh()
-        await self._socket.connect(self._web.server_url, fetch_data=False)
-        await send_success(ctx, f"Refreshed room data from <{self._web.room_url}>")
+        await self._room_manager.active_room.refresh()
+        await send_success(ctx, f"Refreshed room at <{self._room_manager.active_room.location}>")
 
     ################################################
     ########### SLOT MANAGEMENT COMMANDS ###########
@@ -239,17 +207,17 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        self._state.add_user_slot(ctx.author.id, flags.slot)
+        self.state.add_user_slot(ctx.author.id, flags.slot)
         await send_success(ctx, f"You have been registered for slot `{flags.slot}`")
 
     @slot.command(name="remove", help="Unregisters you from the given slot", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def slot_remove(self, ctx: BotContext, *, flags: SlotFlags) -> None:
-        self._state.remove_user_slot(ctx.author.id, flags.slot)
+        self.state.remove_user_slot(ctx.author.id, flags.slot)
         await send_success(ctx, f"You have been unregistered from slot `{flags.slot}`")
 
     @slot.command(name="list", help="Lists all slots for which you are registered", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def slot_list(self, ctx: BotContext) -> None:
-        slots = self._state.get_user_slots(ctx.author.id)
+        slots = self.state.get_user_slots(ctx.author.id)
         if not slots:
             await send_message(ctx, "You are not registered for any slots")
         else:
@@ -258,7 +226,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @slot.command(name="clear", help="Clears your registration for all slots", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def slot_clear(self, ctx: BotContext) -> None:
-        self._state.clear_user_slots(ctx.author.id)
+        self.state.clear_user_slots(ctx.author.id)
         await send_success(ctx, "You have been unregistered from all slots")
 
     @slot.command(name="info", help="Get information about your registered slots (can filter by slot)", ignore_extra=False, extras={"ord": 5})  # type: ignore[arg-type]
@@ -266,7 +234,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         message = []
         for slot in slots:
-            groups_joined = join_objects(self._state.all_groups(slot.game))
+            groups_joined = join_objects(self.state.all_groups(slot.game))
             message.append(
                 "\n".join(
                     [
@@ -281,9 +249,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @slot.command(name="search", help="Search for items/locations in your registered slots containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 6})  # type: ignore[arg-type]
     async def slot_search(self, ctx: BotContext, *, flags: SlotFlagsValue) -> None:
         slots = self._resolve_slots(ctx, flags.slot)
-        slot_items = {slot: self._state.search_items(slot.game, cast(str, flags.value)) for slot in slots}
+        slot_items = {slot: self.state.search_items(slot.game, cast(str, flags.value)) for slot in slots}
         slot_items = {slot: items for slot, items in slot_items.items() if items}
-        slot_locations = {slot: self._state.search_locations(slot.game, cast(str, flags.value)) for slot in slots}
+        slot_locations = {slot: self.state.search_locations(slot.game, cast(str, flags.value)) for slot in slots}
         slot_locations = {slot: locations for slot, locations in slot_locations.items() if locations}
 
         if not slot_items and not slot_locations:
@@ -324,9 +292,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         for slot in slots:
             # We always call get_new_items() to trigger the saving of replay position, but we disregard the
             # resulting list if the "since" flag was set.
-            items = self._state.get_new_items(ctx.author.id, slot)
+            items = self.state.get_new_items(ctx.author.id, slot)
             if flags.since is not None:
-                items = self._state.get_all_items(slot, since=cast(Optional[timedelta], flags.since))
+                items = self.state.get_all_items(slot, since=cast(Optional[timedelta], flags.since))
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
@@ -335,7 +303,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
         for slot in slots:
-            items = self._state.get_all_items(slot, since=cast(Optional[timedelta], flags.since))
+            items = self.state.get_all_items(slot, since=cast(Optional[timedelta], flags.since))
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
@@ -356,7 +324,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             for item in items:
                 table["You"].append(str(slot))
                 table["Item"].append(item.item_name)
-                table["Sender"].append(self._state.resolve_slot(item.from_slot_id).name)
+                table["Sender"].append(self.state.resolve_slot(item.from_slot_id).name)
                 table["Location"].append(item.location_name)
             await send_table(ctx, table, reply=True)
 
@@ -390,8 +358,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                item = self._state.resolve_item(slot.game, cast(str, flags.item))
-                self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.ITEM, item.name)
+                item = self.state.resolve_item(slot.game, cast(str, flags.item))
+                self.state.add_user_subscription(ctx.author.id, slot, SubscriptionType.ITEM, item.name)
                 matching_slots.append(slot)
             except ADOSError:
                 continue
@@ -408,8 +376,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                group = self._state.resolve_group(slot.game, cast(str, flags.group))
-                self._state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
+                group = self.state.resolve_group(slot.game, cast(str, flags.group))
+                self.state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
                 matching_slots.append(slot)
             except ADOSError:
                 continue
@@ -421,12 +389,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsValue) -> None:
-        self._state.remove_user_subscriptions(ctx.author.id, flags.slot, flags.value)
+        self.state.remove_user_subscriptions(ctx.author.id, flags.slot, flags.value)
         await send_success(ctx, f"You have removed items/group subscriptions matching `{flags.value}`")
 
     @subscribe.command(name="list", help="Lists your active item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
     async def subscribe_list(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
-        slot_subscriptions = self._state.get_user_subscriptions(ctx.author.id, cast(Optional[SlotInfo], flags.slot))
+        slot_subscriptions = self.state.get_user_subscriptions(ctx.author.id, cast(Optional[SlotInfo], flags.slot))
         if not slot_subscriptions:
             await send_message(ctx, "You have no active item/group subscriptions")
         else:
@@ -440,7 +408,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
-        self._state.remove_user_subscriptions(ctx.author.id, flags.slot, None)
+        self.state.remove_user_subscriptions(ctx.author.id, flags.slot, None)
         await send_success(ctx, "You have cleared your item/group subscriptions")
 
     ################################################
@@ -473,7 +441,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                item = self._state.resolve_item(slot.game, cast(str, flags.item))
+                item = self.state.resolve_item(slot.game, cast(str, flags.item))
                 matching_slots.append(slot)
             except ADOSError:
                 continue
@@ -482,7 +450,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if len(matching_slots) != 1:
             raise ADOSError(f"Item `{flags.item}` exists in multiple slots; please specify one to hint")
 
-        socket = await self._get_slot_socket(matching_slots[0])
+        socket = await self._room_manager.active_room.get_slot_socket(matching_slots[0])
         response = await socket.perform_request(HintsMessage, get_hint_item_message(item.name))
         points = await socket.perform_request(HintPointsMessage, get_hint_message())
         await self._send_hint_response(ctx, response, points)
@@ -494,7 +462,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                location = self._state.resolve_location(slot.game, cast(str, flags.location))
+                location = self.state.resolve_location(slot.game, cast(str, flags.location))
                 matching_slots.append(slot)
             except ADOSError:
                 continue
@@ -503,7 +471,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if len(matching_slots) != 1:
             raise ADOSError(f"Location `{flags.location}` exists in multiple slots; please specify one to hint")
 
-        socket = await self._get_slot_socket(matching_slots[0])
+        socket = await self._room_manager.active_room.get_slot_socket(matching_slots[0])
         response = await socket.perform_request(HintsMessage, get_hint_location_message(location.name))
         points = await socket.perform_request(HintPointsMessage, get_hint_message())
         await self._send_hint_response(ctx, response, points)
@@ -511,7 +479,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def hint_list(self, ctx: BotContext, *, flags: HintFlagsList) -> None:
         async def _fetch_hints_for_slot(slot: SlotInfo) -> HintsMessage:
-            socket = await self._get_slot_socket(slot)
+            socket = await self._room_manager.active_room.get_slot_socket(slot)
             return await socket.perform_request(HintsMessage, get_hint_message())
 
         slots = self._resolve_slots(ctx, flags.slot)
@@ -527,7 +495,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @hint.command(name="points", help="Show hint points held and needed (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def hint_points(self, ctx: BotContext, *, flags: HintFlagsPoints) -> None:
         async def _fetch_points_for_slot(slot: SlotInfo) -> HintPointsMessage:
-            socket = await self._get_slot_socket(slot)
+            socket = await self._room_manager.active_room.get_slot_socket(slot)
             return await socket.perform_request(HintPointsMessage, get_hint_message())
 
         slots = self._resolve_slots(ctx, flags.slot)
@@ -562,19 +530,19 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
         table: dict[str, list[str]] = {"Hinter": [], "Item": [], "Holder": [], "Location": [], "Status": []}
         for hint in hints:
-            to_slot = self._state.resolve_slot(hint.to_slot_id)
-            from_slot = self._state.resolve_slot(hint.from_slot_id)
+            to_slot = self.state.resolve_slot(hint.to_slot_id)
+            from_slot = self.state.resolve_slot(hint.from_slot_id)
             table["Hinter"].append(str(to_slot))
-            table["Item"].append(str(self._state.resolve_item(to_slot.game, hint.item_id)))
+            table["Item"].append(str(self.state.resolve_item(to_slot.game, hint.item_id)))
             table["Holder"].append(str(from_slot))
-            table["Location"].append(str(self._state.resolve_location(from_slot.game, hint.location_id)))
+            table["Location"].append(str(self.state.resolve_location(from_slot.game, hint.location_id)))
             table["Status"].append(hint.status.name.lower())
 
         if len(hints) == 1:
             self_slot, item, other_slot, location, status = (column[0] for column in table.values())
             await send_message(
                 ctx,
-                f"{highlight(self_slot)}'s `{item}` is at `{location}` in `{highlight(other_slot)}`'s world ({status})",
+                f"{highlight(self_slot)}'s `{item}` is at `{location}` in {highlight(other_slot)}'s world ({status})",
                 reply=True,
             )
         else:
@@ -589,12 +557,14 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="checks", help="Outputs data on completed/total checks per slot", ignore_extra=False)
     async def checks(self, ctx: BotContext, *, flags: StatsFlags) -> None:
-        server_statuses = (await self._socket.perform_request(StatusMessage, get_status_message())).statuses
-        local_statuses = self._state.slot_checks_statuses()
+        server_statuses = (
+            await self._room_manager.active_room.socket.perform_request(StatusMessage, get_status_message())
+        ).statuses
+        local_statuses = self.state.slot_checks_statuses()
 
         full_statuses: dict[SlotInfo, SlotFullStatus] = {}
         for slot_name, server_status in server_statuses.items():
-            slot = self._state.resolve_slot(slot_name)
+            slot = self.state.resolve_slot(slot_name)
             local_status = local_statuses[slot]
             full_statuses[slot] = SlotFullStatus(
                 found_checks=server_status.found_checks,
@@ -610,7 +580,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="items", help="Outputs data on types of items sent/received per slot", ignore_extra=False)
     async def items(self, ctx: BotContext, *, flags: StatsFlags) -> None:
-        item_counts = dict(sorted(self._state.slot_item_counts().items(), key=lambda pair: pair[0].name))
+        item_counts = dict(sorted(self.state.slot_item_counts().items(), key=lambda pair: pair[0].name))
         if not item_counts:
             await send_message(ctx, "No items have been sent yet")
             return
@@ -618,7 +588,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
     async def deaths(self, ctx: BotContext, *, flags: StatsFlags) -> None:
-        death_counts = dict(sorted(self._state.death_counts().items(), key=lambda pair: pair[0].name))
+        death_counts = dict(sorted(self.state.death_counts().items(), key=lambda pair: pair[0].name))
         if not death_counts:
             await send_message(ctx, "No death links have been triggered yet")
             return
