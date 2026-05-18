@@ -156,7 +156,6 @@ class SocketClient:
             _log.warning(
                 "Connection to websocket server at '%s' for slot '%s' closed: %s", self._server_url, self._slot_name, ex
             )
-            self._handle_message(ConnectionClosedMessage())
         except Exception as ex:
             _log.warning(
                 "Unexpected error in connection to websocket server at '%s' for slot '%s': %s",
@@ -164,7 +163,7 @@ class SocketClient:
                 self._slot_name,
                 ex,
             )
-            self._handle_message(ConnectionClosedMessage())
+        self._handle_message(ConnectionClosedMessage())
 
     def _handle_message(self, message: ServerMessage) -> None:
         for handler in self._handlers.get(type(message), []):

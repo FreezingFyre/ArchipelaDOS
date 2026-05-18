@@ -58,6 +58,7 @@ class RoomWrapper:
         self._sockets_cleanup_task = asyncio.create_task(self._sockets_cleanup_loop())
         self._reconnect_task: Optional[asyncio.Task[None]] = None
 
+        self._tearing_down = False
         self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)
 
     @property
@@ -82,14 +83,13 @@ class RoomWrapper:
 
     # Always called when the room is being disconnected to allow one-time async cleanup.
     async def teardown(self) -> None:
+        self._tearing_down = True
         self._sockets_cleanup_task.cancel()
-        await self._sockets_cleanup_task
         for _, slot_socket in self._slot_sockets.values():
             await slot_socket.disconnect()
 
         if self._reconnect_task is not None:
             self._reconnect_task.cancel()
-            await self._reconnect_task
 
         await self._socket.disconnect()
         self._broadcaster.stop()
@@ -139,8 +139,7 @@ class RoomWrapper:
                 last_used, socket = self._slot_sockets[slot]
                 if datetime.now() - last_used > SOCKET_CLEANUP_INACTIVITY_THRESHOLD:
                     _log.info("Cleaning up socket for slot '%s' due to inactivity", slot)
-                    await socket.disconnect()
-                    self._slot_sockets.pop(slot)
+                    await socket.disconnect()  # No need to pop socket, as the disconnected callback does this.
 
         while True:
             try:
@@ -154,6 +153,8 @@ class RoomWrapper:
     # If the socket disconnects, we want to refresh the room and attempt a reconnect before
     # erroring out.
     def _on_socket_disconnected(self, _: ConnectionClosedMessage) -> None:
+        if self._tearing_down:
+            return
 
         async def _reconnect_task() -> None:
             _log.warning("Socket disconnected; attempting to refresh room and reconnect")
@@ -163,7 +164,8 @@ class RoomWrapper:
             except Exception as ex:
                 _log.error("Failed to reconnect socket after disconnect: %s", ex)
                 self._broadcaster.admin_alert(
-                    f"Lost connection to Archipelago server. Use `{COMMAND_PREFIX}room refresh` to attempt a reconnect."
+                    f"Lost connection to Archipelago server"
+                    " — use `{COMMAND_PREFIX}room refresh` to attempt a reconnect"
                 )
 
         self._reconnect_task = asyncio.create_task(_reconnect_task())
@@ -192,7 +194,15 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
             return
         _log.info("Reconnecting to active room at '%s'", self._state.active_room.location)
         self._room = RoomWrapper(self._config, self._client, self._state.active_room)
-        await self._room.initialize()
+        try:
+            await self._room.initialize()
+        except Exception as ex:
+            _log.warning("Could not reconnect to active room at '%s' on startup", self._room.location)
+            self._room.broadcaster.admin_alert(
+                f"Could not connect to room <{self._room.location}> on startup"
+                f" — use `{COMMAND_PREFIX}room refresh` to attempt a reconnect"
+                f" or `{COMMAND_PREFIX}room finalize` to disconnect from that room"
+            )
 
     async def connect(self, location: str, slot: str, game: str) -> None:
         if self._room is not None:
@@ -217,7 +227,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
         except Exception as ex:
             # If there's a problem connecting to the room, we do not keep it as active. We also
             # delete its data path.
-            _log.error("Error when attempting to connect to room at '%s': %s", location, ex)
+            _log.error("Issue when attempting to connect to room at '%s': %s", location, ex)
             await new_room.teardown()
             shutil.rmtree(data_path, ignore_errors=True)
             raise ADOSError(f"Failed to connect to new room at '{location}'") from ex

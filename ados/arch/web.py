@@ -43,28 +43,18 @@ class WebClient:
 
         _log.info("Refreshing web information from '%s'", self.room_url)
 
-        for delay in RETRY_DELAYS:
-            try:
-                await asyncio.sleep(delay.total_seconds())
-                async with ClientSession(timeout=ClientTimeout(10)) as http_session:
-                    async with http_session.get(f"{self.room_url}?update") as http_ret:
-                        if not http_ret.ok:
-                            raise ADOSError(
-                                f"Failed to access room at '{self.room_url}' (status code {http_ret.status})"
-                            )
-                        http_text = await http_ret.text()
-                break
-            except Exception as ex:
-                _log.warning("Failed to refresh web information at '%s': %s", self.room_url, ex)
-        else:
-            raise ADOSError(f"Failed to refresh web information at '{self.room_url}' after multiple attempts")
+        async with ClientSession(timeout=ClientTimeout(10)) as http_session:
+            async with http_session.get(f"{self.room_url}?update") as http_ret:
+                if not http_ret.ok:
+                    raise ADOSError(f"Failed to access room at '{self.room_url}' (status code {http_ret.status})")
 
-        tracker_match = TRACKER_REGEX.search(http_text)
-        port_match = PORT_REGEX.search(http_text)
-        if not tracker_match or not port_match:
-            raise ADOSError(f"Failed to parse URL information at '{self.room_url}'")
+                http_text = await http_ret.text()
+                tracker_match = TRACKER_REGEX.search(http_text)
+                port_match = PORT_REGEX.search(http_text)
+                if not tracker_match or not port_match:
+                    raise ADOSError(f"Failed to parse URL information at '{self.room_url}'")
 
-        self._tracker_url = f"https://{BASE_URL}/tracker/{tracker_match.group(1)}"
-        self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
+                self._tracker_url = f"https://{BASE_URL}/tracker/{tracker_match.group(1)}"
+                self._server_url = f"wss://{BASE_URL}:{port_match.group(1)}"
 
         _log.info("Completed web information refresh; server is running at '%s'", self.server_url)
