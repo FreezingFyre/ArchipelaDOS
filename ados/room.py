@@ -164,8 +164,8 @@ class RoomWrapper:
             except Exception as ex:
                 _log.error("Failed to reconnect socket after disconnect: %s", ex)
                 self._broadcaster.admin_alert(
-                    f"Lost connection to Archipelago server"
-                    " — use `{COMMAND_PREFIX}room refresh` to attempt a reconnect"
+                    "Lost connection to Archipelago server"
+                    f" — use `{COMMAND_PREFIX}room refresh` to attempt a reconnect"
                 )
 
         self._reconnect_task = asyncio.create_task(_reconnect_task())
@@ -196,7 +196,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
         self._room = RoomWrapper(self._config, self._client, self._state.active_room)
         try:
             await self._room.initialize()
-        except Exception as ex:
+        except Exception:
             _log.warning("Could not reconnect to active room at '%s' on startup", self._room.location)
             self._room.broadcaster.admin_alert(
                 f"Could not connect to room <{self._room.location}> on startup"
