@@ -9,7 +9,11 @@ from typing import Optional
 import discord
 from pydantic import BaseModel
 
-from ados.arch.messages import ConnectionClosedMessage
+from ados.arch.messages import (
+    KEEPALIVE_MESSAGES,
+    ConnectionClosedMessage,
+    ServerMessage,
+)
 from ados.arch.socket import SocketClient
 from ados.arch.web import WebClient
 from ados.common import ADOSError, Persisted, SlotInfo
@@ -24,6 +28,7 @@ _log = logging.getLogger(__name__)
 HOSTED_BASE_URL = "archipelago.gg/room"
 SOCKET_CLEANUP_INTERVAL = timedelta(minutes=1)
 SOCKET_CLEANUP_INACTIVITY_THRESHOLD = timedelta(minutes=5)
+HOSTED_INACTIVITY_THRESHOLD = timedelta(hours=12)
 
 
 # Encodes all the data necessary for ArchipelaDOS to connect to a room. Supports both
@@ -59,7 +64,12 @@ class RoomWrapper:
         self._reconnect_task: Optional[asyncio.Task[None]] = None
 
         self._tearing_down = False
+        self._last_used = datetime.now()
+        self._inactivity_threshold = HOSTED_INACTIVITY_THRESHOLD if self._web is not None else timedelta.max()
         self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)
+
+        for message_type in KEEPALIVE_MESSAGES:
+            self._socket.add_message_handler(message_type, self._on_keepalive_message)
 
     @property
     def location(self) -> str:
@@ -124,6 +134,11 @@ class RoomWrapper:
         self._slot_sockets[slot] = (datetime.now(), socket)
         return socket
 
+    # If the room disconnects, we want to make sure it was recently used before attempting a refresh.
+    # This function marks the room as recently used.
+    def mark_used(self) -> None:
+        self._last_used = datetime.now()
+
     async def _refresh(self, *, fetch_data: bool) -> None:
         location = self._location
         if self._web is not None:
@@ -151,9 +166,15 @@ class RoomWrapper:
                 _log.error("Error during socket cleanup: %s", ex)
 
     # If the socket disconnects, we want to refresh the room and attempt a reconnect before
-    # erroring out.
+    # erroring out, assuming the room has been used recently.
     def _on_socket_disconnected(self, _: ConnectionClosedMessage) -> None:
         if self._tearing_down:
+            return
+        if datetime.now() - self._last_used > self._inactivity_threshold:
+            self._broadcaster.admin_alert(
+                "Lost connection to Archipelago server after inactivity timeout"
+                f" — use `{COMMAND_PREFIX}room refresh` to reconnect or `{COMMAND_PREFIX}room finalize` to finalize"
+            )
             return
 
         async def _reconnect_task() -> None:
@@ -170,6 +191,9 @@ class RoomWrapper:
 
         self._reconnect_task = asyncio.create_task(_reconnect_task())
 
+    def _on_keepalive_message[T: ServerMessage](self, _: T) -> None:
+        self.mark_used()
+
 
 # Manages the bot's active room. Only one room can be active at a time.
 class ActiveRoomManager(Persisted[ActiveRoomData]):
@@ -185,6 +209,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
     def active_room(self) -> RoomWrapper:
         if self._room is None:
             raise ADOSError("The bot has not been connected to a room")
+        self._room.mark_used()
         return self._room
 
     # Always called after construction to allow one-time async setup. If there was a saved

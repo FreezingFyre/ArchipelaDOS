@@ -305,6 +305,17 @@ type ServerMessage = (
     | StatusMessage
 )
 
+# When received, some messages should indicate to the bot that the room is alive, and should be
+# reconnected to if possible.
+KEEPALIVE_MESSAGES = (
+    ItemSendMessage,
+    DeathLinkMessage,
+    PlayerChatMessage,
+    ServerChatMessage,
+    GoalReachedMessage,
+    SlotReleaseMessage,
+)
+
 
 # Server messages are sent to connected clients as lists of JSON objects. This deserialize function
 # splits each list into the requisite message types and yields them individually. The exception is for
