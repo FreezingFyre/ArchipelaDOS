@@ -201,7 +201,7 @@ class GraphPlotter:
                     column_label.set_fontweight("bold")
 
         if legend is not None:
-            plt.legend(legend, loc="lower right")
+            plt.legend(legend, reverse=True, fontsize="small", loc="upper right")
 
         plt.title(title, fontsize=16)
         plt.xlabel("Slot", fontsize=14)
