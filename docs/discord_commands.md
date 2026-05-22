@@ -65,7 +65,7 @@ Another useful feature of the bot is the ability of users to subscribe to partic
 |-|-|
 | `!subscribe item <item> [slot: <slot>]`   | Subscribes you for the given `item`; optionally filtered by `slot` |
 | `!subscribe group <group> [slot: <slot>]` | Subscribes you for the given `group`; optionally filtered by `slot` |
-| `!subscribe remove <text> [slot: <slot>]` | Unsubscribes you from items/groups containing the given `text`; optionally filtered by `slot` |
+| `!subscribe remove <text> [slot: <slot>]` | Unsubscribes you from items/groups matching the given `text`; optionally filtered by `slot` |
 | `!subscribe list [slot: <slot>]`          | Lists your active item/group subscriptions; optionally filtered by `slot` |
 | `!subscribe clear [slot: <slot>]`         | Clears all your item/group subscriptions; optionally filtered by `slot` |
 | `!subscribe <item> [slot: <slot>]`        | Alias of `!subscribe item` |
@@ -89,4 +89,5 @@ Some fun and useful stats are aggregated by the bot during its run. These comman
 | | |
 |-|-|
 | `!checks <graph\|list\|table>` | Outputs data on completed/total checks per slot, in graph or table format |
+| `!items <graph\|list\|table>`  | Outputs data on types of items sent/received per slot, in graph or table format |
 | `!deaths <graph\|list\|table>` | Outputs data on death links triggered per slot, in graph or table format |
