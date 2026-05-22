@@ -65,7 +65,7 @@ class RoomWrapper:
 
         self._tearing_down = False
         self._last_used = datetime.now()
-        self._inactivity_threshold = HOSTED_INACTIVITY_THRESHOLD if self._web is not None else timedelta.max()
+        self._inactivity_threshold = HOSTED_INACTIVITY_THRESHOLD if self._web is not None else timedelta.max
         self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)
 
         for message_type in KEEPALIVE_MESSAGES:
