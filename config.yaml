@@ -5,16 +5,17 @@
 # The Discord bot token used to authenticate with the Discord API.
 discord_token: null
 
-# The Discord server in which to operate. Currently, the bot can only operate in one server.
+# The Discord server in which to operate. This must be given as a server name. Currently, the bot
+# can only operate in one server.
 discord_server: null
 
-# The Discord channel(s) in which to service user commands. If empty, the bot will service user
-# commands in all channels.
+# The Discord channel(s) in which to service user commands. These must be given as channel names.
 discord_command_channels: []
 
-# The Discord channel(s) in which to broadcast. Each channel must also be configured with a
-# list of which types of messages to broadcast. If the list is empty, all messages will be
-# broadcast to that channel.
+# The Discord channel(s) in which to broadcast. These must be given as a mapping from channel
+# names to a list of which message types to broadcast in the channel. If the list is empty, all
+# messages will be broadcast to that channel. These are the message types:
+#
 #   - "progression_items": Broadcast progression item sends.
 #   - "useful_items": Broadcast useful item sends (includes progression).
 #   - "all_items": Broadcast all item sends (includes useful and progression, excludes traps).
@@ -25,6 +26,15 @@ discord_command_channels: []
 #   - "server_chat": Broadcast when the server sends a global chat message.
 #   - "goal_reached": Broadcast when a player reaches their goal.
 #   - "admin_alerts": Broadcast alerts related to bot status, like when it disconnects.
+#
+# Note that at least one channel *must* be configured to broadcast "admin_alerts". Here is an
+# example for this configuration, so that messages are sent to the channels "all-messages" and
+# "specific-messages":
+#
+# discord_broadcast_channels: {
+#     "all-messages": [],
+#     "specific-messages": ["progression_items", "death_links", "goal_reached"]
+# }
 discord_broadcast_channels: {}
 
 
