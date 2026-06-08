@@ -44,8 +44,10 @@ class ADOSConfig(BaseModel):
     # Token is marked with exclude=True, repr=False to avoid accidental logging or exposure.
     discord_token: str = Field(..., exclude=True, repr=False)
     discord_server: str
+    discord_command_prefix: str
     discord_command_channels: set[str]
     discord_broadcast_channels: dict[str, set[BroadcastCategory]]
+    discord_mention_channel_blacklist: set[str]
 
     data_path: Annotated[str, BeforeValidator(_expand_path)]
     death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
@@ -57,6 +59,15 @@ class ADOSConfig(BaseModel):
     @field_serializer("logging_level")
     def _serialize_logging_level(self, level: int) -> str:
         return getLevelName(level)
+
+    # Validate that the configured command prefix is a single non-alphanumeric character.
+    @model_validator(mode="after")
+    def _validate_prefix(self) -> Self:
+        if len(self.discord_command_prefix) != 1:
+            raise ValueError("command prefix must be a single character")
+        if self.discord_command_prefix.isalnum():
+            raise ValueError("command prefix cannot be alphanumeric")
+        return self
 
     # Validate that the broadcast channel configs are valid (only one item category filter
     # is set per channel).

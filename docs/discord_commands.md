@@ -29,10 +29,10 @@ The bot operates by connecting to one Archipelago room at a time.
 
 | | |
 |-|-|
-| `!room connect <id_or_url> [slot: <slot>] [game: <game>]`  | Connect to a new Archipelago room via room ID or socket URL, sith `slot` and `game` optionally specified |
-| `!room finalize`                                           | Disconnect from the current Archipelago room, allowing a new connection |
-| `!room info`                                               | Get information about the Archipelago room (port, list of slots, etc) |
-| `!room refresh`                                            | Refresh the room on archipelago.gg, reconnecting the bot if it got disconnected |
+| `!room connect <id_or_url> [slot: <slot>] [game: <game>] [password: <password>]`  | Connect to a new Archipelago room via room ID or socket URL, with `slot`, `game`, and `password` optionally specified |
+| `!room finalize`                                                                  | Disconnect from the current Archipelago room, allowing a new connection |
+| `!room info`                                                                      | Get information about the Archipelago room (port, list of slots, etc) |
+| `!room refresh`                                                                   | Refresh the room on archipelago.gg, reconnecting the bot if it got disconnected |
 
 ## Slot management commands
 

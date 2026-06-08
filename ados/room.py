@@ -19,7 +19,6 @@ from ados.arch.web import WebClient
 from ados.common import ADOSError, Persisted, SlotInfo
 from ados.config import ADOSConfig
 from ados.discord.broadcast import MessageBroadcaster
-from ados.discord.common import COMMAND_PREFIX
 from ados.logger import add_logging_handler, remove_logging_handler
 from ados.state import RoomState
 
@@ -37,6 +36,7 @@ class RoomData(BaseModel):
     location: str
     slot: str
     game: str
+    password: Optional[str]
     data_path: str
 
 
@@ -53,9 +53,11 @@ class RoomWrapper:
     def __init__(self, config: ADOSConfig, client: discord.Client, room_data: RoomData) -> None:
         self._log_handler = add_logging_handler(os.path.join(room_data.data_path, "room.log"))
 
+        self._config = config
         self._location = room_data.location
+        self._password = room_data.password
         self._web = WebClient(self._location) if HOSTED_BASE_URL in self._location else None
-        self._socket = SocketClient(slot_name=room_data.slot, game=room_data.game)
+        self._socket = SocketClient(slot_name=room_data.slot, game=room_data.game, password=room_data.password)
         self._state = RoomState(room_data.data_path, self._socket)
         self._broadcaster = MessageBroadcaster(config, self._socket, self._state, client)
 
@@ -95,7 +97,7 @@ class RoomWrapper:
     async def teardown(self) -> None:
         self._tearing_down = True
         self._sockets_cleanup_task.cancel()
-        for _, slot_socket in self._slot_sockets.values():
+        for _, slot_socket in list(self._slot_sockets.values()):
             await slot_socket.disconnect()
 
         if self._reconnect_task is not None:
@@ -128,7 +130,7 @@ class RoomWrapper:
             socket = self._slot_sockets[slot][1]
         else:
             _log.info("Creating new socket for slot '%s'", slot)
-            socket = SocketClient(slot_name=slot.name, game=slot.game)
+            socket = SocketClient(slot_name=slot.name, game=slot.game, password=self._password)
             socket.add_message_handler(ConnectionClosedMessage, lambda _: self._slot_sockets.pop(slot, None))
             await socket.connect(self._web.server_url if self._web is not None else self._location, fetch_data=False)
         self._slot_sockets[slot] = (datetime.now(), socket)
@@ -173,7 +175,8 @@ class RoomWrapper:
         if datetime.now() - self._last_used > self._inactivity_threshold:
             self._broadcaster.admin_alert(
                 "Lost connection to Archipelago server after inactivity timeout"
-                f" — use `{COMMAND_PREFIX}room refresh` to reconnect or `{COMMAND_PREFIX}room finalize` to finalize"
+                f" — use `{self._config.discord_command_prefix}room refresh` to reconnect"
+                f" or `{self._config.discord_command_prefix}room finalize` to finalize"
             )
             return
 
@@ -186,12 +189,12 @@ class RoomWrapper:
                 _log.error("Failed to reconnect socket after disconnect: %s", ex)
                 self._broadcaster.admin_alert(
                     "Lost connection to Archipelago server"
-                    f" — use `{COMMAND_PREFIX}room refresh` to attempt a reconnect"
+                    f" — use `{self._config.discord_command_prefix}room refresh` to attempt a reconnect"
                 )
 
         self._reconnect_task = asyncio.create_task(_reconnect_task())
 
-    def _on_keepalive_message[T: ServerMessage](self, _: T) -> None:
+    def _on_keepalive_message(self, _: ServerMessage) -> None:
         self.mark_used()
 
 
@@ -225,11 +228,11 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
             _log.warning("Could not reconnect to active room at '%s' on startup", self._room.location)
             self._room.broadcaster.admin_alert(
                 f"Could not connect to room <{self._room.location}> on startup"
-                f" — use `{COMMAND_PREFIX}room refresh` to attempt a reconnect"
-                f" or `{COMMAND_PREFIX}room finalize` to disconnect from that room"
+                f" — use `{self._config.discord_command_prefix}room refresh` to attempt a reconnect"
+                f" or `{self._config.discord_command_prefix}room finalize` to disconnect from that room"
             )
 
-    async def connect(self, location: str, slot: str, game: str) -> None:
+    async def connect(self, location: str, slot: str, game: str, password: Optional[str]) -> None:
         if self._room is not None:
             raise ADOSError("Cannot connect to a new room until the current room is finalized")
 
@@ -237,13 +240,14 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
         # https://archipelago.gg/room/<room> or wss://<room>.
         if re.match(r"^[\w-]+$", location):
             location = f"https://{HOSTED_BASE_URL}/{location}"
-        else:
-            prefix = "https" if HOSTED_BASE_URL in location else "wss"
-            location = f"{prefix}://{location.split("://")[-1]}"
+        elif HOSTED_BASE_URL in location:
+            location = f"https://{location.split("://")[-1]}"
+        elif "://" not in location:
+            location = f"wss://{location}"
 
         data_path = os.path.join(self._config.data_path, datetime.now().strftime("%Y%m%d_%H%M%S"))
         os.makedirs(data_path, exist_ok=True)
-        new_room_data = RoomData(location=location, slot=slot, game=game, data_path=data_path)
+        new_room_data = RoomData(location=location, slot=slot, game=game, password=password, data_path=data_path)
         new_room = RoomWrapper(self._config, self._client, new_room_data)
 
         _log.info("Connecting to new room at '%s'", location)
@@ -255,7 +259,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
             _log.error("Issue when attempting to connect to room at '%s': %s", location, ex)
             await new_room.teardown()
             shutil.rmtree(data_path, ignore_errors=True)
-            raise ADOSError(f"Failed to connect to new room at '{location}'") from ex
+            raise ADOSError(f"Failed to connect to new room at <{location}>") from ex
 
         # Broadcasting can be enabled/disabled orthogonally to the room being connected/disconnected.
         # Start the broadcaster if appropriate.

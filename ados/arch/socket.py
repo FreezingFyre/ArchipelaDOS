@@ -33,9 +33,10 @@ MAX_LOG_SIZE = 4096
 # for specific message types.
 class SocketClient:
 
-    def __init__(self, *, slot_name: str, game: str):
+    def __init__(self, *, slot_name: str, game: str, password: Optional[str]):
         self._game = game
         self._slot_name = slot_name
+        self._password = password
 
         self._handlers: dict[type[ServerMessage], list[Callable[[Any], Any]]] = defaultdict(list)
         self._request_locks: dict[type[ServerMessage], asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -110,7 +111,7 @@ class SocketClient:
             except Exception as ex:
                 _log.warning("Failed to connect to websocket server at '%s': %s", server_url, ex)
         else:
-            raise ADOSError(f"Failed to connect to websocket server at '{server_url}' after multiple attempts")
+            raise ADOSError(f"Failed to connect to websocket server at <{server_url}> after multiple attempts")
 
         room_info = next(deserialize(await socket.recv()))
         if not isinstance(room_info, RoomInfoMessage):
@@ -127,7 +128,7 @@ class SocketClient:
             self._handle_message(data_package)
 
         _log.info("Sending connect message to server at '%s' for slot '%s'", server_url, self._slot_name)
-        await socket.send(connect_message(game=self._game, slot=self._slot_name))
+        await socket.send(connect_message(game=self._game, slot=self._slot_name, password=self._password))
 
         connect_response = next(deserialize(await socket.recv()))
         if not isinstance(connect_response, (ConnectedMessage, ConnectionRefusedMessage)):

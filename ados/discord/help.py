@@ -4,7 +4,7 @@ from typing import NamedTuple, Optional, cast
 from discord.ext import commands
 from discord.ext.commands.flags import FlagsMeta
 
-from ados.discord.common import COMMAND_PREFIX, send_failure, send_message
+from ados.discord.common import send_failure, send_message
 
 
 class CommandData(NamedTuple):
@@ -15,6 +15,10 @@ class CommandData(NamedTuple):
 # We implement our own help command so that we can better expose the sub-command structure
 # in the main help output, and provide proper flag names in the per-command help output.
 class HelpCommand(commands.HelpCommand):
+
+    def __init__(self, command_prefix: str) -> None:
+        super().__init__()  # type: ignore[no-untyped-call]
+        self._command_prefix = command_prefix
 
     # Called when the main "!help" command is invoked.
     async def send_bot_help(self, mapping: dict[Optional[commands.Cog], list[commands.Command]]) -> None:  # type: ignore[type-arg]
@@ -36,9 +40,9 @@ class HelpCommand(commands.HelpCommand):
         name_len = max(len(data.name) for data in all_commands)
         for data in all_commands:
             padding = " " * (name_len - len(data.name))
-            message_lines.append(f"  {COMMAND_PREFIX}{data.name}{padding}  {data.brief}")
+            message_lines.append(f"  {self._command_prefix}{data.name}{padding}  {data.brief}")
 
-        message_lines.append(f"\nType '{COMMAND_PREFIX}help <command>' for more info on a particular command.")
+        message_lines.append(f"\nType '{self._command_prefix}help <command>' for more info on a particular command.")
         message = "\n".join(message_lines)
         await send_message(self.context, f"```{message}```", reply=True)
 
@@ -51,7 +55,7 @@ class HelpCommand(commands.HelpCommand):
             all_commands.append(CommandData(name, brief))
 
         message_lines: list[str] = []
-        message_lines.append(f"{COMMAND_PREFIX}{group.name}\n")
+        message_lines.append(f"{self._command_prefix}{group.name}\n")
         if group.help:
             message_lines.append(f"{group.help}\n")
         message_lines.append("Available sub-commands:")
@@ -62,7 +66,7 @@ class HelpCommand(commands.HelpCommand):
             message_lines.append(f"  {data.name}{padding}  {data.brief}")
 
         message_lines.append(
-            f"\nType '{COMMAND_PREFIX}help {group.name} <command>' for more info on a particular command."
+            f"\nType '{self._command_prefix}help {group.name} <command>' for more info on a particular command."
         )
         message = "\n".join(message_lines)
         await send_message(self.context, f"```{message}```", reply=True)
@@ -92,7 +96,7 @@ class HelpCommand(commands.HelpCommand):
             signature = signature.replace(f"<{param.name}>", " ".join(flags))
 
         message_lines: list[str] = []
-        message_lines.append(f"{COMMAND_PREFIX}{command.qualified_name} {signature}")
+        message_lines.append(f"{self._command_prefix}{command.qualified_name} {signature}")
         if command.help:
             message_lines.append(f"\n{command.help}")
 

@@ -93,6 +93,7 @@ class MessageBroadcaster:
             for channel_name, categories in config.discord_broadcast_channels.items()
         }
         self._channels: dict[str, discord.TextChannel] = {}
+        self._no_mention_channels = config.discord_mention_channel_blacklist
 
         self._death_link_messages = self._load_death_link_messages(config.death_link_messages_path)
 
@@ -181,13 +182,14 @@ class MessageBroadcaster:
                     user = await self._client.get_or_fetch(discord.User, user_id)
                     if user is not None:
                         mentions += f" {user.mention}"
-                content = content.format(mentions=mentions)
 
                 for channel_name in item.channel_names:
                     channel = self._channels.get(channel_name)
+                    channel_mentions = mentions if channel_name not in self._no_mention_channels else ""
                     if not channel:
                         continue
-                    await channel.send(content)
+                    await channel.send(content.format(mentions=channel_mentions))
+
             except Exception as ex:
                 _log.error("Error broadcasting message to channels %s: %s", item.channel_names, ex)
 

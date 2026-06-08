@@ -9,6 +9,9 @@ discord_token: null
 # can only operate in one server.
 discord_server: null
 
+# The character to use as the prefix for Discord commands. The character must be non-alphanumeric.
+discord_command_prefix: "!"
+
 # The Discord channel(s) in which to service user commands. These must be given as channel names.
 discord_command_channels: []
 
@@ -36,6 +39,10 @@ discord_command_channels: []
 #     "specific-messages": ["progression_items", "death_links", "goal_reached"]
 # }
 discord_broadcast_channels: {}
+
+# The Discord channel(s) in which *not* to mention users for subscribed item sends. These must be
+# given as channel names. Useful if item send notifications are being broadcast to multiple channels.
+discord_mention_channel_blacklist: []
 
 
 #########################

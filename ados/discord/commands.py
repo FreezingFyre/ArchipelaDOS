@@ -31,7 +31,6 @@ from ados.common import (
 )
 from ados.config import ADOSConfig
 from ados.discord.common import (
-    COMMAND_PREFIX,
     BotContext,
     highlight,
     send_message,
@@ -158,14 +157,15 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         id_or_url: str = commands.flag(positional=True)
         slot: str = "ArchipelaDOS"  # We don't resolve this with SlotInfoArg since the bot will not be connected yet.
         game: str = "Archipelago"
+        password: Optional[StringArg] = None
 
     @commands.group(name="room", help="Set and interact with the active room", invoke_without_command=True)  # type: ignore[arg-type]
     async def room(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}room`")
+        raise UserInputError(f"Must specify a sub-command for `{self._config.discord_command_prefix}room`")
 
     @room.command(name="connect", help="Connect to a new Archipelago room via room ID or socket URL", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def room_connect(self, ctx: BotContext, *, flags: RoomFlags) -> None:
-        await self._room_manager.connect(flags.id_or_url, flags.slot, flags.game)
+        await self._room_manager.connect(flags.id_or_url, flags.slot, flags.game, cast(Optional[str], flags.password))
         await send_success(ctx, f"Connected to new room at <{self._room_manager.active_room.location}>")
 
     @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
@@ -203,7 +203,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.group(name="slot", help="Manage slot registrations and info", invoke_without_command=True)  # type: ignore[arg-type]
     async def slot(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}slot`")
+        raise UserInputError(f"Must specify a sub-command for `{self._config.discord_command_prefix}slot`")
 
     @slot.command(name="add", help="Registers you for the given slot", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def slot_add(self, ctx: BotContext, *, flags: SlotFlags) -> None:
@@ -283,7 +283,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.group(name="replay", help="View previously received items for your registered slots", invoke_without_command=True)  # type: ignore[arg-type]
     async def replay(self, ctx: BotContext) -> None:
-        raise UserInputError(f"Must specify a sub-command for `{COMMAND_PREFIX}replay`")
+        raise UserInputError(f"Must specify a sub-command for `{self._config.discord_command_prefix}replay`")
 
     @replay.command(name="new", help="Replay items received since last call (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def replay_new(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
@@ -307,7 +307,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
-    @commands.command(name="ketchmeup", help=f"Alias of '{COMMAND_PREFIX}replay new'", ignore_extra=False)
+    @commands.command(name="ketchmeup", help="Alias of 'replay new'", ignore_extra=False)
     async def ketchmeup(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
         await self.replay_new(ctx, flags=flags)  # type: ignore[arg-type]
 

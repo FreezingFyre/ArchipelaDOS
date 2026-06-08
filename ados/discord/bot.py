@@ -14,7 +14,7 @@ from discord.ext.commands.errors import (
 from ados.common import ADOSError
 from ados.config import ADOSConfig
 from ados.discord.commands import Commands
-from ados.discord.common import COMMAND_PREFIX, BotContext, send_failure
+from ados.discord.common import BotContext, send_failure
 from ados.discord.help import HelpCommand
 from ados.room import ActiveRoomManager
 
@@ -32,8 +32,8 @@ class ADOSBot(commands.Bot):
     def __init__(self, config: ADOSConfig):
         intents = discord.Intents.default()
         intents.message_content = True
-        help_command = HelpCommand()  # type: ignore[no-untyped-call]
-        super().__init__(command_prefix=COMMAND_PREFIX, intents=intents, help_command=help_command)
+        help_command = HelpCommand(config.discord_command_prefix)
+        super().__init__(command_prefix=config.discord_command_prefix, intents=intents, help_command=help_command)
 
         # Guild and channel IDs start unset, and are populated in on_ready().
         self._config = config
