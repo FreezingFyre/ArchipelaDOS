@@ -45,6 +45,7 @@ class SocketClient:
         self._socket: Optional[ClientConnection] = None
         self._socket_task: Optional[asyncio.Task[None]] = None
         self._server_url: Optional[str] = None
+        self._disconnecting = False
 
     async def connect(self, server_url: str, *, fetch_data: bool = False) -> None:
         await self.disconnect()
@@ -56,9 +57,13 @@ class SocketClient:
     async def disconnect(self) -> None:
         if self._socket is not None:
             _log.info("Closing existing socket connection to '%s' for slot '%s'", self._server_url, self._slot_name)
-            await self._socket.close()
-            if self._socket_task is not None:
-                await self._socket_task
+            try:
+                self._disconnecting = True
+                await self._socket.close()
+                if self._socket_task is not None:
+                    await self._socket_task
+            finally:
+                self._disconnecting = False
         self._socket = None
         self._socket_task = None
         self._server_url = None
@@ -164,7 +169,7 @@ class SocketClient:
                 self._slot_name,
                 ex,
             )
-        self._handle_message(ConnectionClosedMessage())
+        self._handle_message(ConnectionClosedMessage(intended=self._disconnecting))
 
     def _handle_message(self, message: ServerMessage) -> None:
         for handler in self._handlers.get(type(message), []):

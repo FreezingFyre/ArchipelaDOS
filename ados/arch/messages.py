@@ -146,7 +146,8 @@ class ConnectionRefusedMessage:
 
 # Sent internally by the websocket client when the connection to Archipelago is closed.
 class ConnectionClosedMessage:
-    pass
+    def __init__(self, *, intended: bool) -> None:
+        self.intended = intended
 
 
 # Sent by the server when the room information is updated -- particularly slot aliases.

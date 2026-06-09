@@ -65,7 +65,6 @@ class RoomWrapper:
         self._sockets_cleanup_task = asyncio.create_task(self._sockets_cleanup_loop())
         self._reconnect_task: Optional[asyncio.Task[None]] = None
 
-        self._tearing_down = False
         self._last_used = datetime.now()
         self._inactivity_threshold = HOSTED_INACTIVITY_THRESHOLD if self._web is not None else timedelta.max
         self._socket.add_message_handler(ConnectionClosedMessage, self._on_socket_disconnected)
@@ -95,7 +94,6 @@ class RoomWrapper:
 
     # Always called when the room is being disconnected to allow one-time async cleanup.
     async def teardown(self) -> None:
-        self._tearing_down = True
         self._sockets_cleanup_task.cancel()
         for _, slot_socket in list(self._slot_sockets.values()):
             await slot_socket.disconnect()
@@ -169,8 +167,8 @@ class RoomWrapper:
 
     # If the socket disconnects, we want to refresh the room and attempt a reconnect before
     # erroring out, assuming the room has been used recently.
-    def _on_socket_disconnected(self, _: ConnectionClosedMessage) -> None:
-        if self._tearing_down:
+    def _on_socket_disconnected(self, message: ConnectionClosedMessage) -> None:
+        if message.intended:
             return
         if datetime.now() - self._last_used > self._inactivity_threshold:
             self._broadcaster.admin_alert(
