@@ -20,6 +20,7 @@ from ados.arch.messages import (
 from ados.common import (
     ADOSError,
     HintInfo,
+    HintStatusFilter,
     ItemCategoryFilter,
     ItemInfo,
     LocationInfo,
@@ -50,11 +51,6 @@ class StatsOutputMode(str, Enum):
     LIST = "list"
     TABLE = "table"
     GRAPH = "graph"
-
-
-class HintFilter(str, Enum):
-    ALL = "all"
-    UNFOUND = "unfound"
 
 
 class SlotInfoArg(commands.Converter[SlotInfo]):
@@ -285,7 +281,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def replay(self, ctx: BotContext) -> None:
         raise UserInputError(f"Must specify a sub-command for `{self._config.discord_command_prefix}replay`")
 
-    @replay.command(name="new", help="Replay items received since last call (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
+    @replay.command(name="new", help="Replay items received since last call (can filter by rarity/slot/relative time delta)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def replay_new(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
         slots = self._resolve_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
@@ -298,7 +294,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             slot_items[slot] = self._filter_items(items, flags)
         await self._send_replay_items(ctx, slot_items)
 
-    @replay.command(name="full", help="Replay all items received since game start (can filter by rarity/slot)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    @replay.command(name="full", help="Replay all items received since game start (can filter by rarity/slot/relative time delta)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def replay_full(self, ctx: BotContext, *, flags: ReplayFlags) -> None:
         slots = self._resolve_slots(ctx, flags.slot)
         slot_items: dict[SlotInfo, list[SentItemInfo]] = {}
@@ -424,7 +420,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slot: Optional[SlotInfoArg] = None
 
     class HintFlagsList(commands.FlagConverter):
-        filter: HintFilter = commands.flag(positional=True, default=HintFilter.UNFOUND)
+        filter: HintStatusFilter = commands.flag(positional=True, default=HintStatusFilter.UNFOUND)
         slot: Optional[SlotInfoArg] = None
 
     class HintFlagsPoints(commands.FlagConverter):
@@ -453,7 +449,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         socket = await self._room_manager.active_room.get_slot_socket(matching_slots[0])
         response = await socket.perform_request(HintsMessage, get_hint_item_message(item.name))
         points = await socket.perform_request(HintPointsMessage, get_hint_message())
-        await self._send_hint_response(ctx, response, points)
+        await self._send_hint_response(ctx, matching_slots[0], response, points)
 
     @hint.command(name="location", help="Use a hint to see what is at the given location (can filter by slot if needed)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def hint_location(self, ctx: BotContext, *, flags: HintFlagsLocation) -> None:
@@ -474,9 +470,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         socket = await self._room_manager.active_room.get_slot_socket(matching_slots[0])
         response = await socket.perform_request(HintsMessage, get_hint_location_message(location.name))
         points = await socket.perform_request(HintPointsMessage, get_hint_message())
-        await self._send_hint_response(ctx, response, points)
+        await self._send_hint_response(ctx, matching_slots[0], response, points)
 
-    @hint.command(name="list", help="List unfound hints (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
+    @hint.command(name="list", help="List available hints (can filter by slot/status)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
     async def hint_list(self, ctx: BotContext, *, flags: HintFlagsList) -> None:
         async def _fetch_hints_for_slot(slot: SlotInfo) -> HintsMessage:
             socket = await self._room_manager.active_room.get_slot_socket(slot)
@@ -485,12 +481,14 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         results = await asyncio.gather(*(_fetch_hints_for_slot(slot) for slot in slots))
 
-        hints: list[HintInfo] = []
-        for result in results:
-            hints.extend(result.hints)
-        if flags.filter == HintFilter.UNFOUND:
-            hints = [hint for hint in hints if not hint.found]
-        await self._send_hints(ctx, hints)
+        sent_hints = False
+        for slot, result in zip(slots, results):
+            hints = [hint for hint in result.hints if flags.filter.check(hint.status)]
+            if hints:
+                sent_hints = True
+                await self._send_hints(ctx, slot, hints)
+        if not sent_hints:
+            await send_message(ctx, "There are no hints available for the selected slots and filter level")
 
     @hint.command(name="points", help="Show hint points held and needed (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def hint_points(self, ctx: BotContext, *, flags: HintFlagsPoints) -> None:
@@ -508,9 +506,11 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
             )
         await send_message(ctx, "\n".join(message))
 
-    async def _send_hint_response(self, ctx: BotContext, response: HintsMessage, points: HintPointsMessage) -> None:
+    async def _send_hint_response(
+        self, ctx: BotContext, slot: SlotInfo, response: HintsMessage, points: HintPointsMessage
+    ) -> None:
         if response.result == HintsMessage.Result.SUCCESS:
-            await self._send_hints(ctx, response.hints)
+            await self._send_hints(ctx, slot, response.hints)
             await send_message(
                 ctx,
                 f"You have {points.points_available} points remaining ({points.points_required} required)",
@@ -523,10 +523,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                 f"You cannot afford a hint; you have {points.points_available} points available and need at least {points.points_required}"
             )
 
-    async def _send_hints(self, ctx: BotContext, hints: list[HintInfo]) -> None:
-        if not hints:
-            await send_message(ctx, "There are no hints available for the selected slots")
-            return
+    async def _send_hints(self, ctx: BotContext, hinter: SlotInfo, hints: list[HintInfo]) -> None:
+        hints.sort(key=lambda hint: (hint.to_slot_id != hinter.id, -hint.status.value, hint.item_id))
 
         table: dict[str, list[str]] = {"Hinter": [], "Item": [], "Holder": [], "Location": [], "Status": []}
         for hint in hints:

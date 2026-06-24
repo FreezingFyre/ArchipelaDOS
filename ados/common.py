@@ -77,6 +77,22 @@ class HintStatus(int, Enum):
     FOUND = 40
 
 
+# Defined filters for hint statuses. Generally follow the status names, except for
+# the addition of an "unfound" filter.
+class HintStatusFilter(str, Enum):
+    UNSPECIFIED = "unspecified"
+    UNNEEDED = "unneeded"
+    AVOID = "avoid"
+    PRIORITY = "priority"
+    FOUND = "found"
+    UNFOUND = "unfound"
+
+    def check(self, status: HintStatus) -> bool:
+        return (
+            (status != HintStatus.FOUND) if (self == HintStatusFilter.UNFOUND) else (status.name.lower() == self.value)
+        )
+
+
 # Stores information about a particular slot in the multiworld. The id, name,
 # and game are immutable, while the alias may be changed during the session.
 class SlotInfo(NamedTuple):
@@ -130,7 +146,6 @@ class HintInfo(NamedTuple):
     location_id: int
     to_slot_id: int
     from_slot_id: int
-    found: bool
     status: HintStatus
 
 

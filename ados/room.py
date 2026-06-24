@@ -27,7 +27,7 @@ _log = logging.getLogger(__name__)
 HOSTED_BASE_URL = "archipelago.gg/room"
 SOCKET_CLEANUP_INTERVAL = timedelta(minutes=1)
 SOCKET_CLEANUP_INACTIVITY_THRESHOLD = timedelta(minutes=5)
-HOSTED_INACTIVITY_THRESHOLD = timedelta(hours=12)
+HOSTED_INACTIVITY_THRESHOLD = timedelta(hours=24)
 
 
 # Encodes all the data necessary for ArchipelaDOS to connect to a room. Supports both

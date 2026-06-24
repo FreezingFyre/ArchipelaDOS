@@ -78,7 +78,7 @@ If a slot is password-less, the bot can be used to facilitate hint operations on
 |-|-|
 | `!hint item <item> [slot: <slot>]`         | Use a hint for the given `item`; optionally filtered by `slot` |
 | `!hint location <location> [slot: <slot>]` | Use a hint to see what is at the given `location`; optionally filtered by `slot` |
-| `!hint list [filter] [slot: <slot>]`       | List hints; optionally filtered by found `filter` or `slot` |
+| `!hint list [filter] [slot: <slot>]`       | List hints; optionally filtered by status `filter` or `slot` |
 | `!hint points [slot: <slot>]`              | Show hint points held and needed; optionally filtered by `slot` |
 | `!hint <item> [slot: <slot>]`              | Alias of `!hint item` |
 

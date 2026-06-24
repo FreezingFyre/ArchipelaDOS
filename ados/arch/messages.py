@@ -261,7 +261,6 @@ class HintsMessage:
                 location_id=info["item"]["location"],
                 to_slot_id=info["receiving"],
                 from_slot_id=info["item"]["player"],
-                found=info["found"],
                 status=_get_status(info),
             )
             for info in data or []
