@@ -63,12 +63,13 @@ Another useful feature of the bot is the ability of users to subscribe to partic
 
 | | |
 |-|-|
-| `!subscribe item <item> [slot: <slot>]`   | Subscribes you for the given `item`; optionally filtered by `slot` |
-| `!subscribe group <group> [slot: <slot>]` | Subscribes you for the given `group`; optionally filtered by `slot` |
-| `!subscribe remove <text> [slot: <slot>]` | Unsubscribes you from items/groups matching the given `text`; optionally filtered by `slot` |
-| `!subscribe list [slot: <slot>]`          | Lists your active item/group subscriptions; optionally filtered by `slot` |
-| `!subscribe clear [slot: <slot>]`         | Clears all your item/group subscriptions; optionally filtered by `slot` |
-| `!subscribe <item> [slot: <slot>]`        | Alias of `!subscribe item` |
+| `!subscribe item <item> [slot: <slot>]`     | Subscribes you for the given `item`; optionally filtered by `slot` |
+| `!subscribe group <group> [slot: <slot>]`   | Subscribes you for the given `group`; optionally filtered by `slot` |
+| `!subscribe filter <filter> [slot: <slot>]` | Subscribes you for the given item category `filter`; optionally filtered by `slot` |
+| `!subscribe remove <text> [slot: <slot>]`   | Unsubscribes you from items/groups/filters matching the given `text`; optionally filtered by `slot` |
+| `!subscribe list [slot: <slot>]`            | Lists your active item/group subscriptions; optionally filtered by `slot` |
+| `!subscribe clear [slot: <slot>]`           | Clears all your item/group subscriptions; optionally filtered by `slot` |
+| `!subscribe <item> [slot: <slot>]`          | Alias of `!subscribe item` |
 
 ## Hint commands
 
