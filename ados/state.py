@@ -21,6 +21,8 @@ from ados.arch.messages import (
 from ados.arch.socket import SocketClient
 from ados.common import (
     ADOSError,
+    ItemCategory,
+    ItemCategoryFilter,
     ItemInfo,
     LocationInfo,
     Persisted,
@@ -78,8 +80,8 @@ class RoomState(Persisted[RoomStateData]):
 
     def __init__(self, data_path: str, socket: SocketClient):
 
-        super().__init__(os.path.join(data_path, "state.json"))
-        self._item_log_file = os.path.join(data_path, "itemlog.txt")
+        super().__init__(os.path.join(data_path, "room.json"))
+        self._item_log_file = os.path.join(data_path, "itemlog.jsonl")
 
         self._slots: dict[int, SlotInfo] = {}
         self._slot_ids_by_name: dict[str, int] = {}
@@ -353,7 +355,7 @@ class RoomState(Persisted[RoomStateData]):
     ################ SUBSCRIPTIONS #################
     ################################################
 
-    def get_subscribed_users(self, slot: SlotInfo, item: ItemInfo) -> set[int]:
+    def get_subscribed_users(self, slot: SlotInfo, category: ItemCategory, item: ItemInfo) -> set[int]:
         user_ids: set[int] = set()
         subscriptions = self._state.slot_subscriptions.get(slot.id, set())
 
@@ -361,8 +363,12 @@ class RoomState(Persisted[RoomStateData]):
             if subscription.type == SubscriptionType.ITEM:
                 if item.name == subscription.value:
                     user_ids.add(subscription.user_id)
-            elif subscription.value in item.groups:
-                user_ids.add(subscription.user_id)
+            elif subscription.type == SubscriptionType.GROUP:
+                if subscription.value in item.groups:
+                    user_ids.add(subscription.user_id)
+            elif subscription.type == SubscriptionType.FILTER:
+                if ItemCategoryFilter(subscription.value).check(category):
+                    user_ids.add(subscription.user_id)
 
         return user_ids
 

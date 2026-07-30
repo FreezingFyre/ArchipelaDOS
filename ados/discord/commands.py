@@ -339,6 +339,10 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         group: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
 
+    class SubscribeFlagsFilter(commands.FlagConverter):
+        filter: ItemCategoryFilter = commands.flag(positional=True)
+        slot: Optional[SlotInfoArg] = None
+
     class SubscribeFlagsValue(commands.FlagConverter):
         value: StringArg = commands.flag(positional=True)
         slot: Optional[SlotInfoArg] = None
@@ -359,8 +363,10 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                 matching_slots.append(slot)
             except ADOSError:
                 continue
-        if not matching_slots or item is None:
+        if item is None:
             raise ADOSError(f"Item `{flags.item}` does not exist in the searched slots")
+        if not matching_slots:
+            raise ADOSError(f"Already subscribed for item `{flags.item}` in the searched slots")
 
         slot_names_joined = join_objects(matching_slots)
         await send_success(ctx, f"You have subscribed to item `{item.name}` in: {slot_names_joined}")
@@ -377,18 +383,38 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                 matching_slots.append(slot)
             except ADOSError:
                 continue
-        if not matching_slots or group is None:
+        if group is None:
             raise ADOSError(f"Group `{flags.group}` does not exist in the searched slots")
+        if not matching_slots:
+            raise ADOSError(f"Already subscribed for group `{flags.group}` in the searched slots")
 
         slot_names_joined = join_objects(matching_slots)
         await send_success(ctx, f"You have subscribed to item group `{group}` in: {slot_names_joined}")
 
-    @subscribe.command(name="remove", help="Unsubscribes you from items/groups containing the given text (can filter by slot)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
+    @subscribe.command(name="filter", help="Subscribes you for the given item category filter (can filter by slot if needed)", ignore_extra=False, extras={"ord": 3})  # type: ignore[arg-type]
+    async def subscribe_filter(self, ctx: BotContext, *, flags: SubscribeFlagsFilter) -> None:
+        matching_slots: list[SlotInfo] = []
+        slots = self._resolve_slots(ctx, flags.slot)
+        for slot in slots:
+            try:
+                self.state.add_user_subscription(ctx.author.id, slot, SubscriptionType.FILTER, flags.filter.value)
+                matching_slots.append(slot)
+            except ADOSError:
+                continue
+        if not matching_slots:
+            raise ADOSError(f"Already subscribed for item category filter `{flags.filter.value}` in the searched slots")
+
+        slot_names_joined = join_objects(matching_slots)
+        await send_success(
+            ctx, f"You have subscribed to item category filter `{flags.filter.value}` in: {slot_names_joined}"
+        )
+
+    @subscribe.command(name="remove", help="Unsubscribes you from items/groups/filters matching the given text (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
     async def subscribe_remove(self, ctx: BotContext, *, flags: SubscribeFlagsValue) -> None:
         self.state.remove_user_subscriptions(ctx.author.id, flags.slot, flags.value)
         await send_success(ctx, f"You have removed items/group subscriptions matching `{flags.value}`")
 
-    @subscribe.command(name="list", help="Lists your active item/group subscriptions (can filter by slot)", ignore_extra=False)  # type: ignore[arg-type]
+    @subscribe.command(name="list", help="Lists your active item/group subscriptions (can filter by slot)", ignore_extra=False, extras={"ord": 5})  # type: ignore[arg-type]
     async def subscribe_list(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
         slot_subscriptions = self.state.get_user_subscriptions(ctx.author.id, cast(Optional[SlotInfo], flags.slot))
         if not slot_subscriptions:
@@ -402,7 +428,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
                     table["Value"].append(subscription.value)
             await send_table(ctx, table)
 
-    @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False, extras={"ord": 4})  # type: ignore[arg-type]
+    @subscribe.command(name="clear", help="Clears all your item/group subscriptions (can filter by slot)", ignore_extra=False, extras={"ord": 6})  # type: ignore[arg-type]
     async def subscribe_clear(self, ctx: BotContext, *, flags: SubscribeFlags) -> None:
         self.state.remove_user_subscriptions(ctx.author.id, flags.slot, None)
         await send_success(ctx, "You have cleared your item/group subscriptions")

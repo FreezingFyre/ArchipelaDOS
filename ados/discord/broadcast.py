@@ -135,7 +135,7 @@ class MessageBroadcaster:
 
     def admin_alert(self, message: str) -> None:
         channel_names = self._filter_channels(lambda config: config.send_admin_alerts)
-        content = f":loud_sound: *{message}*"
+        content = f":loudspeaker: *{message}*"
 
         _log.info("Sending admin alert message: '%s'", message)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
@@ -226,7 +226,7 @@ class MessageBroadcaster:
         content += f"{{mentions}}\n-# via check {location}"
 
         _log.info("Handling item '%s' sent from '%s' to '%s'", item, from_slot, to_slot)
-        mention_user_ids = self._state.get_subscribed_users(to_slot, item)
+        mention_user_ids = self._state.get_subscribed_users(to_slot, message.category, item)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content, mention_user_ids))
 
     def _handle_death_link(self, message: DeathLinkMessage) -> None:

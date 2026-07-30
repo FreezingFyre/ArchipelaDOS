@@ -66,6 +66,7 @@ class ItemCategoryFilter(str, Enum):
 class SubscriptionType(str, Enum):
     ITEM = "item"
     GROUP = "group"
+    FILTER = "filter"
 
 
 # Possible statuses of a hint, as per the Archipelago spec.
