@@ -2,8 +2,9 @@ import functools
 import json
 import logging
 import os
+import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from types import get_original_bases
 from typing import Any, Callable, Iterable, NamedTuple, Self, get_args
@@ -28,6 +29,30 @@ def join_objects(objects: Iterable[Any]) -> str:
 # purely alphanumeric way.
 def normalize(value: str) -> str:
     return "".join(c for c in value.lower() if c.isalnum())
+
+
+# Parse a time delta given as a string into the appropriate timedelta type.
+def parse_time_delta(value: str) -> timedelta:
+    value = value.lower()
+
+    def _extract_count(unit: str) -> float:
+        match = re.search(rf"([\d\.]+)\s*{unit}", value)
+        return float(match.group(1)) if match else 0
+
+    delta_days = _extract_count("d")
+    delta_hours = _extract_count("h")
+    delta_minutes = _extract_count("m")
+    delta_seconds = _extract_count("s")
+    return timedelta(days=delta_days, hours=delta_hours, minutes=delta_minutes, seconds=delta_seconds)
+
+
+# Parse hours, minutes, and seconds from a timedelta's total_seconds()
+def parse_hms(value: float) -> tuple[int, int, int]:
+    seconds = int(value)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds %= 60
+    return hours, minutes, seconds
 
 
 # Defined item categories for use in commands and messages. These can technically

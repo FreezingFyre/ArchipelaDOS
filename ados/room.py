@@ -54,6 +54,7 @@ class RoomWrapper:
         self._log_handler = add_logging_handler(os.path.join(room_data.data_path, "room.log"))
 
         self._config = config
+        self._slot = room_data.slot
         self._location = room_data.location
         self._password = room_data.password
         self._web = WebClient(self._location) if HOSTED_BASE_URL in self._location else None
@@ -71,6 +72,10 @@ class RoomWrapper:
 
         for message_type in KEEPALIVE_MESSAGES:
             self._socket.add_message_handler(message_type, self._on_keepalive_message)
+
+    @property
+    def slot(self) -> str:
+        return self._slot
 
     @property
     def location(self) -> str:

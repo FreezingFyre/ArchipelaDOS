@@ -11,19 +11,12 @@ from ados.common import (
     SlotInfo,
     SlotItemCounts,
     SlotPlaytimeData,
+    parse_hms,
 )
 from ados.discord.common import BotContext, send_table
 
 BAR_COLORS = ["#2C3947", "#547A95", "#C2A56D", "#C16E6E"]
 SHADOW_COLOR = "#E8EDF2"
-
-
-def _playtime_values(playtime: float) -> tuple[int, int, int]:
-    seconds = int(playtime)
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    seconds %= 60
-    return hours, minutes, seconds
 
 
 class TablePlotter:
@@ -97,7 +90,7 @@ class TablePlotter:
     async def send_playtime(ctx: BotContext, playtime_data: dict[SlotInfo, SlotPlaytimeData]) -> None:
         table: dict[str, list[str]] = {"Slot": [], "Sessions": [], "Playtime": []}
         for slot, data in playtime_data.items():
-            hours, minutes, seconds = _playtime_values(data.playtime)
+            hours, minutes, seconds = parse_hms(data.playtime)
             table["Slot"].append(str(slot))
             table["Sessions"].append(str(data.sessions))
             table["Playtime"].append(f"{hours}h {minutes:02}m {seconds:02}s")
@@ -195,7 +188,7 @@ class GraphPlotter:
         values: list[float] = []
         labels: list[str] = []
         for data in playtime_data.values():
-            hours, minutes, seconds = _playtime_values(data.playtime)
+            hours, minutes, seconds = parse_hms(data.playtime)
             values.append(data.playtime / (60 if use_minutes else 3600))
             labels.append(f"{minutes}:{seconds:02}" if use_minutes else f"{hours}:{minutes:02}")
 

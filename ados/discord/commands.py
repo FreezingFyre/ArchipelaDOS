@@ -1,10 +1,10 @@
 import asyncio
 import random
-import re
 from datetime import timedelta
 from enum import Enum
 from typing import Optional, cast
 
+import discord
 from discord.ext import commands
 from discord.ext.commands.errors import UserInputError
 
@@ -12,11 +12,13 @@ from ados.arch.messages import (
     HintPointsMessage,
     HintsMessage,
     StatusMessage,
+    get_death_link_message,
     get_hint_item_message,
     get_hint_location_message,
     get_hint_message,
     get_status_message,
 )
+from ados.arch.socket import SocketClient
 from ados.common import (
     ADOSError,
     HintInfo,
@@ -28,8 +30,9 @@ from ados.common import (
     SlotInfo,
     SubscriptionType,
     join_objects,
+    parse_time_delta,
 )
-from ados.config import ADOSConfig
+from ados.config import ADOSConfig, ExtraCommand
 from ados.discord.common import (
     BotContext,
     highlight,
@@ -37,6 +40,7 @@ from ados.discord.common import (
     send_success,
     send_table,
 )
+from ados.discord.deathpoll import DeathPollManager
 from ados.discord.plotting import GraphPlotter, TablePlotter
 from ados.room import ActiveRoomManager
 from ados.state import RoomState
@@ -71,17 +75,7 @@ class StringArg(commands.Converter[str]):
 
 class TimeDeltaArg(commands.Converter[timedelta]):
     async def convert(self, ctx: BotContext, argument: str) -> timedelta:  # pylint: disable = unused-argument
-        argument = argument.lower()
-
-        def _extract_count(unit: str) -> float:
-            match = re.search(rf"([\d\.]+)\s*{unit}", argument)
-            return float(match.group(1)) if match else 0
-
-        delta_days = _extract_count("d")
-        delta_hours = _extract_count("h")
-        delta_minutes = _extract_count("m")
-        delta_seconds = _extract_count("s")
-        return timedelta(days=delta_days, hours=delta_hours, minutes=delta_minutes, seconds=delta_seconds)
+        return parse_time_delta(argument)
 
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
@@ -90,10 +84,22 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         super().__init__()
         self._config = config
         self._room_manager = room_manager
+        self._death_poll_manager = DeathPollManager()
+
+        # Disable and hide all the extra commands that are not explicitly enabled in the config.
+        disabled_command_names = {ec.value for ec in ExtraCommand} - {ec.value for ec in config.extra_commands_enabled}
+        for command in self.walk_commands():
+            if command.qualified_name.replace(" ", "_") in disabled_command_names:
+                command.enabled = False  # type: ignore[attr-defined]
+                command.hidden = True  # type: ignore[attr-defined]
 
     @property
     def state(self) -> RoomState:
         return self._room_manager.active_room.state
+
+    @property
+    def socket(self) -> SocketClient:
+        return self._room_manager.active_room.socket
 
     def _resolve_slots(self, ctx: BotContext, flag_slot: Optional[SlotInfoArg]) -> list[SlotInfo]:
         if flag_slot is not None:
@@ -165,8 +171,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def room_finalize(self, ctx: BotContext) -> None:
-        self.state.flush_playtime()
         location = self._room_manager.active_room.location
+        self.state.flush_playtime()
+        self._death_poll_manager.cancel_all()
         await self._room_manager.disconnect()
         await send_success(ctx, f"Disconnected from room at <{location}>")
 
@@ -599,9 +606,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="checks", help="Outputs data on completed/total checks per slot", ignore_extra=False)
     async def checks(self, ctx: BotContext, *, flags: StatsFlags) -> None:
-        server_statuses = (
-            await self._room_manager.active_room.socket.perform_request(StatusMessage, get_status_message())
-        ).statuses
+        server_statuses = (await self.socket.perform_request(StatusMessage, get_status_message())).statuses
         local_statuses = self.state.slot_checks_statuses()
 
         full_statuses: dict[SlotInfo, SlotFullStatus] = {}
@@ -646,3 +651,46 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     def _get_plotter(self, mode: StatsOutputMode) -> type[GraphPlotter] | type[TablePlotter]:
         return GraphPlotter if mode == StatsOutputMode.GRAPH else TablePlotter
+
+    ################################################
+    ################ EXTRA COMMANDS ################
+    ################################################
+
+    FAREWELLS = [
+        "Affirmative",
+        "As you wish",
+        "Aye aye, Captain",
+        "Farewell",
+        "I shall see it done",
+        "It shall be so",
+        "Roger that",
+        "Sayonara",
+        "Until we meet again",
+        "We only part to meet again",
+        "Your wish is my command",
+    ]
+
+    class DeathPollFlags(commands.FlagConverter):
+        timeout: Optional[TimeDeltaArg] = commands.flag(positional=True, default=None)
+
+    @commands.command(name="deathlink", help="Trigger an immediate death link", ignore_extra=False)
+    async def deathlink(self, ctx: BotContext) -> None:
+        if isinstance(ctx.channel, discord.DMChannel):
+            raise ADOSError("Cannot trigger a death link from DMs")
+        await self._send_death_link()
+        await send_message(ctx, random.choice(Commands.FAREWELLS))
+
+    @commands.command(name="deathpoll", help="Poll if death link should trigger after a timeout", ignore_extra=False)
+    async def deathpoll(self, ctx: BotContext, *, flags: DeathPollFlags) -> None:
+        if isinstance(ctx.channel, discord.DMChannel):
+            raise ADOSError("Cannot start a death link poll in DMs")
+        timeout = (
+            cast(timedelta, flags.timeout) if flags.timeout is not None else self._config.default_deathpoll_timeout
+        )
+        if timeout < timedelta(seconds=30):
+            raise ADOSError("Timeout for death link poll must be at least 30 seconds")
+        self._death_poll_manager.create_death_poll(ctx, timeout, self._send_death_link)
+
+    async def _send_death_link(self) -> None:
+        self_name = self._room_manager.active_room.slot
+        await self.socket.send_message(get_death_link_message(self_name))

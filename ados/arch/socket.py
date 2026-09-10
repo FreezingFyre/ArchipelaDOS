@@ -100,6 +100,12 @@ class SocketClient:
                 )
                 raise ADOSError(f"Timed out waiting for response from server of type '{response_type}'") from ex
 
+    # Send a message to the server without expecting a response.
+    async def send_message(self, message: str) -> None:
+        if self._socket is None:
+            raise ADOSError("Attempted sending message while socket is disconnected")
+        await self._socket.send(message)
+
     async def _initialize_connection(self, server_url: str, fetch_data: bool) -> ClientConnection:
         # The Archipelago handshake consists of:
         #   - Server sends "RoomInfo" message on socket establishment

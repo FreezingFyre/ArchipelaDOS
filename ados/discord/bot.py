@@ -9,6 +9,7 @@ from discord.ext.commands.errors import (
     CommandInvokeError,
     CommandNotFound,
     ConversionError,
+    DisabledCommand,
     UserInputError,
 )
 
@@ -125,6 +126,9 @@ class ADOSBot(commands.Bot):
         elif isinstance(exception, CommandInvokeError) and isinstance(exception.original, ADOSError):
             _log.info("Error running user command '%s': %s", context.message.content, exception.original)
             await send_failure(context, f"Error running command: {exception.original}")
+        elif isinstance(exception, DisabledCommand):
+            _log.info("User attempted use of a disabled command: %s", context.message.content)
+            await send_failure(context, f"Invalid operation: {exception}")
         else:
             _log.error("Unexpected error processing user command '%s': %s", context.message.content, exception)
             await send_failure(context, "Something went wrong while processing your command.")

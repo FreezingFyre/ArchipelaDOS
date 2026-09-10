@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from enum import Enum
 from logging import getLevelName, getLevelNamesMapping
 from typing import Annotated, Any, Optional, Self
@@ -11,6 +12,8 @@ from pydantic import (
     field_serializer,
     model_validator,
 )
+
+from ados.common import parse_time_delta
 
 
 def _transform_logging_level(value: Any) -> int:
@@ -37,6 +40,11 @@ class BroadcastCategory(str, Enum):
     ADMIN_ALERTS = "admin_alerts"
 
 
+class ExtraCommand(str, Enum):
+    DEATHLINK = "deathlink"
+    DEATHPOLL = "deathpoll"
+
+
 # The main configuration class for ArchipelaDOS. Loaded from a YAML file on startup with strict
 # validation enforced by pydantic.
 class ADOSConfig(BaseModel):
@@ -48,6 +56,9 @@ class ADOSConfig(BaseModel):
     discord_command_channels: set[str]
     discord_broadcast_channels: dict[str, set[BroadcastCategory]]
     discord_mention_channel_blacklist: set[str]
+
+    extra_commands_enabled: set[ExtraCommand]
+    default_deathpoll_timeout: Annotated[timedelta, BeforeValidator(parse_time_delta)]
 
     data_path: Annotated[str, BeforeValidator(_expand_path)]
     death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
@@ -88,6 +99,15 @@ class ADOSConfig(BaseModel):
                 break
         else:
             raise ValueError("at least one broadcast channel must be configured to receive 'admin_alerts'")
+        return self
+
+    # Validate that the default death poll timeout is at least 30 seconds, so people have
+    # time to react to it.
+    @model_validator(mode="after")
+    def _validate_deathpoll_timeout(self) -> Self:
+        if ExtraCommand.DEATHPOLL in self.extra_commands_enabled:
+            if self.default_deathpoll_timeout < timedelta(seconds=30):
+                raise ValueError("default deathpoll timeout must be at least 30 seconds")
         return self
 
 
