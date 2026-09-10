@@ -23,7 +23,6 @@ from ados.common import (
     HintStatusFilter,
     ItemCategoryFilter,
     ItemInfo,
-    LocationInfo,
     SentItemInfo,
     SlotFullStatus,
     SlotInfo,
@@ -230,13 +229,15 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         message = []
         for slot in slots:
-            groups_joined = join_objects(self.state.all_groups(slot.game))
+            item_groups_joined = join_objects(self.state.all_item_groups(slot.game))
+            location_groups_joined = join_objects(self.state.all_location_groups(slot.game))
             message.append(
                 "\n".join(
                     [
                         f"Slot information for `{slot}`:",
                         f"- Game: `{slot.game}`",
-                        f"- Item groups: {groups_joined}",
+                        f"- Item groups: {item_groups_joined}",
+                        f"- Location groups: {location_groups_joined}",
                     ]
                 )
             )
@@ -378,7 +379,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                group = self.state.resolve_group(slot.game, cast(str, flags.group))
+                group = self.state.resolve_item_group(slot.game, cast(str, flags.group))
                 self.state.add_user_subscription(ctx.author.id, slot, SubscriptionType.GROUP, group)
                 matching_slots.append(slot)
             except ADOSError:
@@ -456,45 +457,61 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def hint(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
         await self.hint_item(ctx, flags=flags)  # type: ignore[arg-type]
 
-    @hint.command(name="item", help="Use a hint for the given item (can filter by slot if needed)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
+    @hint.command(name="item", help="Use a hint for the given item/group (can filter by slot if needed)", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def hint_item(self, ctx: BotContext, *, flags: HintFlagsItem) -> None:
-        item: Optional[ItemInfo] = None
+        name: Optional[str] = None
         matching_slots: list[SlotInfo] = []
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                item = self.state.resolve_item(slot.game, cast(str, flags.item))
+                name = self.state.resolve_item(slot.game, cast(str, flags.item)).name
                 matching_slots.append(slot)
-            except ADOSError:
                 continue
-        if not matching_slots or item is None:
+            except ADOSError:
+                pass
+            try:
+                name = self.state.resolve_item_group(slot.game, cast(str, flags.item))
+                matching_slots.append(slot)
+                continue
+            except ADOSError:
+                pass
+
+        if not matching_slots or name is None:
             raise ADOSError(f"Item `{flags.item}` does not exist in the searched slots")
         if len(matching_slots) != 1:
             raise ADOSError(f"Item `{flags.item}` exists in multiple slots; please specify one to hint")
 
         socket = await self._room_manager.active_room.get_slot_socket(matching_slots[0])
-        response = await socket.perform_request(HintsMessage, get_hint_item_message(item.name))
+        response = await socket.perform_request(HintsMessage, get_hint_item_message(name))
         points = await socket.perform_request(HintPointsMessage, get_hint_message())
         await self._send_hint_response(ctx, matching_slots[0], response, points)
 
-    @hint.command(name="location", help="Use a hint to see what is at the given location (can filter by slot if needed)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
+    @hint.command(name="location", help="Use a hint to see what is at the given location/group (can filter by slot if needed)", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def hint_location(self, ctx: BotContext, *, flags: HintFlagsLocation) -> None:
-        location: Optional[LocationInfo] = None
+        name: Optional[str] = None
         matching_slots: list[SlotInfo] = []
         slots = self._resolve_slots(ctx, flags.slot)
         for slot in slots:
             try:
-                location = self.state.resolve_location(slot.game, cast(str, flags.location))
+                name = self.state.resolve_location(slot.game, cast(str, flags.location)).name
                 matching_slots.append(slot)
-            except ADOSError:
                 continue
-        if not matching_slots or location is None:
+            except ADOSError:
+                pass
+            try:
+                name = self.state.resolve_location_group(slot.game, cast(str, flags.location))
+                matching_slots.append(slot)
+                continue
+            except ADOSError:
+                pass
+
+        if not matching_slots or name is None:
             raise ADOSError(f"Location `{flags.location}` does not exist in the searched slots")
         if len(matching_slots) != 1:
             raise ADOSError(f"Location `{flags.location}` exists in multiple slots; please specify one to hint")
 
         socket = await self._room_manager.active_room.get_slot_socket(matching_slots[0])
-        response = await socket.perform_request(HintsMessage, get_hint_location_message(location.name))
+        response = await socket.perform_request(HintsMessage, get_hint_location_message(name))
         points = await socket.perform_request(HintPointsMessage, get_hint_message())
         await self._send_hint_response(ctx, matching_slots[0], response, points)
 

@@ -76,16 +76,12 @@ def get_data_package_message(games: list[str]) -> str:
     )
 
 
-# Sent to the server to request item groups for games in the multiworld.
-def get_item_groups_message(games: list[str]) -> str:
-    return json.dumps(
-        [
-            {
-                "cmd": "Get",
-                "keys": [f"_read_item_name_groups_{game}" for game in games],
-            }
-        ]
-    )
+# Sent to the server to request item and location groups for games in the multiworld.
+def get_fetch_groups_message(games: list[str]) -> str:
+    keys: list[str] = []
+    keys.extend(f"_read_item_name_groups_{game}" for game in games)
+    keys.extend(f"_read_location_name_groups_{game}" for game in games)
+    return json.dumps([{"cmd": "Get", "keys": keys}])
 
 
 # Sent to the server to request information about current hints or hint point levels.
@@ -156,20 +152,28 @@ class RoomUpdateMessage:
         self.slots = [_slot_from_data(info, data["slot_info"]) for info in data["players"]]
 
 
-# Sent by the server when returning information about item groups for its games.
-class ItemGroupsMessage:
+# Sent by the server when returning information about item and location groups for its games.
+class FetchedGroupsMessage:
     def __init__(self, data: dict[str, Any]) -> None:
-        self.game_groups: dict[str, list[str]] = defaultdict(list)
-        self.game_item_groups: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        self.game_item_groups: dict[str, list[str]] = defaultdict(list)
+        self.game_location_groups: dict[str, list[str]] = defaultdict(list)
+        self.game_items_to_groups: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        self.game_locations_to_groups: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+
         for game_key, groups in data["keys"].items():
-            game = game_key.replace("_read_item_name_groups_", "")
-            for group, item_names in groups.items():
-                if len(item_names) < 2:
-                    # No sense bothering with single-item groups.
+            game = game_key.replace("_read_item_name_groups_", "").replace("_read_location_name_groups_", "")
+            for group, names in groups.items():
+                if len(names) < 2:
+                    # No sense bothering with single-element groups.
                     continue
-                self.game_groups[game].append(group)
-                for item_name in item_names:
-                    self.game_item_groups[game][item_name].append(group)
+                if "_read_item_name_groups_" in game_key:
+                    self.game_item_groups[game].append(group)
+                    for item_name in names:
+                        self.game_items_to_groups[game][item_name].append(group)
+                else:
+                    self.game_location_groups[game].append(group)
+                    for location_name in names:
+                        self.game_locations_to_groups[game][location_name].append(group)
 
 
 # Sent by the server when one slot sends an item to another slot.
@@ -292,7 +296,7 @@ type ServerMessage = (
     | ConnectionRefusedMessage
     | ConnectionClosedMessage
     | RoomUpdateMessage
-    | ItemGroupsMessage
+    | FetchedGroupsMessage
     | ItemSendMessage
     | DeathLinkMessage
     | JoinLeaveMessage
@@ -343,8 +347,10 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ConnectionRefusedMessage(message)
             elif cmd == "RoomUpdate" and "players" in message:
                 yield RoomUpdateMessage(message)
-            elif cmd == "Retrieved" and all("_read_item_name_groups_" in key for key in message["keys"]):
-                yield ItemGroupsMessage(message)
+            elif cmd == "Retrieved" and all(
+                ("_read_item_name_groups_" in key or "_read_location_name_groups_" in key) for key in message["keys"]
+            ):
+                yield FetchedGroupsMessage(message)
             elif cmd == "PrintJSON" and message.get("type") == "ItemSend":
                 yield ItemSendMessage(message)
             elif cmd == "Bounced" and "DeathLink" in message.get("tags", []):

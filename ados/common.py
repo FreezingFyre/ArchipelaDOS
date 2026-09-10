@@ -124,6 +124,7 @@ class LocationInfo(NamedTuple):
     id: int
     name: str
     game: str
+    groups: list[str] = []
 
     def __str__(self) -> str:
         return self.name

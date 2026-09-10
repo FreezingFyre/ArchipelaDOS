@@ -17,7 +17,7 @@ from ados.arch.messages import (
     connect_message,
     deserialize,
     get_data_package_message,
-    get_item_groups_message,
+    get_fetch_groups_message,
 )
 from ados.common import ADOSError
 
@@ -144,10 +144,10 @@ class SocketClient:
         _log.info("Successfully connected to websocket server for slot '%s'", self._slot_name)
         self._handle_message(connect_response)
 
-        # If fetching data, we also want to get information about item groups for each game.
+        # If fetching data, we also want to get information about item/location groups for each game.
         # This response is handled separately with normal message dispatch.
         if fetch_data:
-            await socket.send(get_item_groups_message(room_info.games))
+            await socket.send(get_fetch_groups_message(room_info.games))
 
         return socket
 
