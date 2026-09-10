@@ -55,6 +55,19 @@ def parse_hms(value: float) -> tuple[int, int, int]:
     return hours, minutes, seconds
 
 
+# Describe a time delta in human-readable language
+def describe_timeout(timeout: timedelta) -> str:
+    hours, minutes, seconds = parse_hms(timeout.total_seconds())
+    descriptors: list[str] = []
+    if hours:
+        descriptors.append(f"{hours} hour{"" if hours == 1 else "s"}")
+    if minutes:
+        descriptors.append(f"{minutes} minute{"" if minutes == 1 else "s"}")
+    if seconds:
+        descriptors.append(f"{seconds} second{"" if seconds == 1 else "s"}")
+    return ", ".join(descriptors)
+
+
 # Defined item categories for use in commands and messages. These can technically
 # overlap per the Archipelago spec, but we treat them as mutually exclusive.
 class ItemCategory(int, Enum):

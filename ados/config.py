@@ -58,6 +58,10 @@ class ADOSConfig(BaseModel):
     discord_mention_channel_blacklist: set[str]
 
     extra_commands_enabled: set[ExtraCommand]
+    extra_command_cooldowns: Annotated[
+        dict[ExtraCommand, timedelta],
+        BeforeValidator(lambda data: {command: parse_time_delta(cooldown) for command, cooldown in data.items()}),
+    ]
     default_deathpoll_timeout: Annotated[timedelta, BeforeValidator(parse_time_delta)]
 
     data_path: Annotated[str, BeforeValidator(_expand_path)]

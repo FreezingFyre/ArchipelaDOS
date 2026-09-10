@@ -5,7 +5,7 @@ from typing import Awaitable, Callable, NamedTuple, Optional
 
 from discord.message import Message
 
-from ados.common import parse_hms
+from ados.common import describe_timeout
 from ados.discord.common import BotContext
 
 _log = logging.getLogger(__name__)
@@ -22,18 +22,6 @@ NO_EMOJI = "😇"
 class UpdateTimeData(NamedTuple):
     timestamp: datetime
     timeout_left: timedelta
-
-
-def _describe_timeout(timeout: timedelta) -> str:
-    hours, minutes, seconds = parse_hms(timeout.total_seconds())
-    descriptors: list[str] = []
-    if hours:
-        descriptors.append(f"{hours} hour{"" if hours == 1 else "s"}")
-    if minutes:
-        descriptors.append(f"{minutes} minute{"" if minutes == 1 else "s"}")
-    if seconds:
-        descriptors.append(f"{seconds} second{"" if seconds == 1 else "s"}")
-    return ", ".join(descriptors)
 
 
 def _get_update_times(timeout: timedelta) -> tuple[datetime, list[UpdateTimeData]]:
@@ -63,7 +51,7 @@ class DeathPollManager:
         self._polls: dict[int, asyncio.Task[None]] = {}
 
     def create_death_poll(self, ctx: BotContext, timeout: timedelta, on_kill: Callable[[], Awaitable[None]]) -> None:
-        _log.info("Initiating a death poll that expires in %s", _describe_timeout(timeout))
+        _log.info("Initiating a death poll that expires in %s", describe_timeout(timeout))
         poll_id = self._poll_id
         self._poll_id += 1
         self._polls[poll_id] = asyncio.create_task(self._run_poll(poll_id, ctx, timeout, on_kill))
@@ -86,14 +74,14 @@ class DeathPollManager:
         message: Optional[Message] = None
         try:
             finish_timestamp, update_times = _get_update_times(timeout)
-            message = await ctx.send(MESSAGE.format(timeout=_describe_timeout(timeout)))
+            message = await ctx.send(MESSAGE.format(timeout=describe_timeout(timeout)))
             await message.add_reaction(YES_EMOJI)
             await message.add_reaction(NO_EMOJI)
 
             # Each of these represents a time when the poll message should be updated.
             for time in update_times:
                 await asyncio.sleep((time.timestamp - datetime.now()).total_seconds())
-                await message.edit(content=MESSAGE.format(timeout=_describe_timeout(time.timeout_left)))
+                await message.edit(content=MESSAGE.format(timeout=describe_timeout(time.timeout_left)))
 
             # Wait the final amount of time before collecting results.
             await asyncio.sleep((finish_timestamp - datetime.now()).total_seconds())

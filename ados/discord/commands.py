@@ -1,6 +1,7 @@
 import asyncio
 import random
-from datetime import timedelta
+from collections import defaultdict
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, cast
 
@@ -29,6 +30,7 @@ from ados.common import (
     SlotFullStatus,
     SlotInfo,
     SubscriptionType,
+    describe_timeout,
     join_objects,
     parse_time_delta,
 )
@@ -85,6 +87,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         self._config = config
         self._room_manager = room_manager
         self._death_poll_manager = DeathPollManager()
+        self._last_used_timestamps: dict[ExtraCommand, datetime] = defaultdict(lambda: datetime.min)
 
         # Disable and hide all the extra commands that are not explicitly enabled in the config.
         disabled_command_names = {ec.value for ec in ExtraCommand} - {ec.value for ec in config.extra_commands_enabled}
@@ -109,6 +112,16 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if len(slots) == 0:
             raise ADOSError("You are not registered for any slots; either register or specify a slot")
         return slots
+
+    def _ensure_cooldown(self, command: ExtraCommand) -> None:
+        now_timestamp = datetime.now()
+        since_last_use = now_timestamp - self._last_used_timestamps[command]
+        cooldown = self._config.extra_command_cooldowns.get(command, timedelta(seconds=0))
+        if since_last_use < cooldown:
+            command_str = f"`{self._config.discord_command_prefix}{command.value}`"
+            wait_str = describe_timeout(self._last_used_timestamps[command] + cooldown - now_timestamp)
+            raise ADOSError(f"The {command_str} command is on cooldown; please wait {wait_str}")
+        self._last_used_timestamps[command] = now_timestamp
 
     ################################################
     ################ BASIC COMMANDS ################
@@ -678,6 +691,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def deathlink(self, ctx: BotContext) -> None:
         if isinstance(ctx.channel, discord.DMChannel):
             raise ADOSError("Cannot trigger a death link from DMs")
+        self._ensure_cooldown(ExtraCommand.DEATHLINK)
         await self._send_death_link()
         await send_message(ctx, random.choice(Commands.FAREWELLS))
 
@@ -685,6 +699,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def deathpoll(self, ctx: BotContext, *, flags: DeathPollFlags) -> None:
         if isinstance(ctx.channel, discord.DMChannel):
             raise ADOSError("Cannot start a death link poll in DMs")
+        self._ensure_cooldown(ExtraCommand.DEATHPOLL)
         timeout = (
             cast(timedelta, flags.timeout) if flags.timeout is not None else self._config.default_deathpoll_timeout
         )
