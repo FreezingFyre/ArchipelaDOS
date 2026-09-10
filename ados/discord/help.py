@@ -27,6 +27,8 @@ class HelpCommand(commands.HelpCommand):
         all_commands: list[CommandData] = []
         for _, cog_commands in mapping.items():
             for command in cog_commands:
+                if command.hidden:
+                    continue
                 name = command.name
                 brief = command.brief or command.help or ""
                 if isinstance(command, commands.Group):
@@ -50,6 +52,8 @@ class HelpCommand(commands.HelpCommand):
     async def send_group_help(self, group: commands.Group) -> None:  # type: ignore[type-arg]
         all_commands: list[CommandData] = []
         for command in sorted(group.commands, key=lambda c: c.extras.get("ord", 0)):
+            if command.hidden:
+                continue
             name = command.name
             brief = command.brief or command.help or ""
             all_commands.append(CommandData(name, brief))

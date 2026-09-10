@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from datetime import datetime
 from enum import Enum
 from typing import Any, Iterator, NamedTuple, Optional
 
@@ -102,6 +103,19 @@ def get_hint_location_message(location_name: str) -> str:
 # Sent to the server to request found/total check counts per slot.
 def get_status_message() -> str:
     return json.dumps([{"cmd": "Say", "text": "!status"}])
+
+
+# Sent to the server to trigger a death link from the bot.
+def get_death_link_message(self_name: str) -> str:
+    return json.dumps(
+        [
+            {
+                "cmd": "Bounce",
+                "tags": ["DeathLink"],
+                "data": {"time": datetime.now().timestamp(), "source": self_name},
+            }
+        ]
+    )
 
 
 ################################################

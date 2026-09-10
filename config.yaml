@@ -45,6 +45,34 @@ discord_broadcast_channels: {}
 discord_mention_channel_blacklist: []
 
 
+##################
+# EXTRA COMMANDS #
+##################
+
+# List of extra commands to enable. These commands may not be suitable for all users/servers, as
+# they can be easily abused. These are the extra commands that can be enabled:
+#
+#   - "deathlink": Triggers an immediate death link
+#   - "deathpoll": Optionally triggers a death link after holding a poll that server users vote on
+#
+extra_commands_enabled: []
+
+# Cooldowns for extra commands that are enabled. These must be given as a mapping from the extra
+# command name (as in the above list) to the cooldown time as a string with h/m/s units. Note that if
+# no cooldown is set here for a command type, it has no cooldown. Here is an example for this
+# configuration that sets cooldowns for both "deathlink" and "deathpoll" commands:
+#
+# extra_command_cooldowns: {
+#     "deathlink": "5m",
+#     "deathpoll": "15m"
+# }
+extra_command_cooldowns: {}
+
+# Default timeout of the "deathpoll" command, assuming it is enabled. This should be a time expressed
+# as a string with h/m/s units. For example: "5m" or "1m30s".
+default_deathpoll_timeout: 3m
+
+
 #########################
 # MISCELLANEOUS OPTIONS #
 #########################
