@@ -162,12 +162,18 @@ class SlotFullStatus(NamedTuple):
     has_released: bool
 
 
-# Encodes all of the items sent and received by a slot, grouped by item category
+# Encodes all of the items sent and received by a slot, grouped by item category.
 class SlotItemCounts:
     def __init__(self) -> None:
         self.sent_items: dict[ItemCategory, int] = defaultdict(int)
         self.received_items: dict[ItemCategory, int] = defaultdict(int)
         self.self_items: dict[ItemCategory, int] = defaultdict(int)
+
+
+# Encodes the playtime data (numer of plays and total duration) of a slot.
+class SlotPlaytimeData(NamedTuple):
+    sessions: int
+    playtime: float
 
 
 # Multiple classes in ArchipelaDOS require state to be persisted to disk, which is loaded

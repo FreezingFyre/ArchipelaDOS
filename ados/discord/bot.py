@@ -1,3 +1,4 @@
+import atexit
 import logging
 from typing import Optional
 
@@ -41,6 +42,7 @@ class ADOSBot(commands.Bot):
         self._command_channel_ids: set[int] = set()
 
         self._room_manager = ActiveRoomManager(config, self)
+        atexit.register(self._on_program_exit)
 
         bot_commands = Commands(config, self._room_manager)
         self.add_cog(bot_commands)
@@ -126,3 +128,10 @@ class ADOSBot(commands.Bot):
         else:
             _log.error("Unexpected error processing user command '%s': %s", context.message.content, exception)
             await send_failure(context, "Something went wrong while processing your command.")
+
+    # When the bot is shut down, we flush the current playtimes since each slot last joined.
+    def _on_program_exit(self) -> None:
+        try:
+            self._room_manager.active_room.state.flush_playtime()
+        except ADOSError:
+            pass

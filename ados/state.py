@@ -15,6 +15,8 @@ from ados.arch.messages import (
     FetchedGroupsMessage,
     GoalReachedMessage,
     ItemSendMessage,
+    JoinLeaveMessage,
+    JoinLeaveType,
     RoomUpdateMessage,
     SlotReleaseMessage,
 )
@@ -29,6 +31,7 @@ from ados.common import (
     SentItemInfo,
     SlotInfo,
     SlotItemCounts,
+    SlotPlaytimeData,
     SubscriptionType,
     normalize,
 )
@@ -63,6 +66,8 @@ class RoomStateData(BaseModel):
     slot_self_freed: DefaultDict[int, int] = defaultdict(int)
     slot_other_freed: DefaultDict[int, int] = defaultdict(int)
     slots_released: set[int] = set()
+    slot_playtime: DefaultDict[int, float] = defaultdict(float)
+    slot_sessions: DefaultDict[int, int] = defaultdict(int)
 
 
 # The data stored in the item log file.
@@ -94,6 +99,10 @@ class RoomState(Persisted[RoomStateData]):
         self._game_item_groups: dict[str, set[str]] = {}
         self._game_location_groups: dict[str, set[str]] = {}
 
+        now_timestamp = datetime.now().timestamp()
+        self._slot_join_timestamp: dict[int, float] = {}
+        self._slot_leave_timestamp: dict[int, float] = defaultdict(lambda: now_timestamp)
+
         # This is the information about slot item sends.
         self._item_counts: dict[int, SlotItemCounts] = defaultdict(SlotItemCounts)
         self._item_log = self._load_item_log()
@@ -104,8 +113,20 @@ class RoomState(Persisted[RoomStateData]):
         socket.add_message_handler(FetchedGroupsMessage, self._handle_fetched_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
         socket.add_message_handler(DeathLinkMessage, self._handle_death_link)
+        socket.add_message_handler(JoinLeaveMessage, self._handle_join_leave)
         socket.add_message_handler(GoalReachedMessage, self._handle_slot_completed)
         socket.add_message_handler(SlotReleaseMessage, self._handle_slot_completed)
+
+    # When the bot is shutting down, or disconnecting from a room, we want to flush the current
+    # playtimes to disk as-is so that playtime up to shutdown is logged.
+    @Persisted.persist
+    def flush_playtime(self) -> None:
+        _log.info("Flushing playtime data for all slots")
+        now_timestamp = datetime.now().timestamp()
+        for slot_id, join_timestamp in self._slot_join_timestamp.items():
+            self._state.slot_playtime[slot_id] += now_timestamp - join_timestamp
+        self._slot_join_timestamp.clear()
+        self._slot_leave_timestamp = defaultdict(lambda: now_timestamp)
 
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
     # will only affect aliases, so all IDs remain valid.
@@ -179,6 +200,20 @@ class RoomState(Persisted[RoomStateData]):
     def _handle_death_link(self, message: DeathLinkMessage) -> None:
         slot = self.resolve_slot(message.slot_name)
         self._state.slot_deaths[slot.id] += 1
+
+    @Persisted.persist
+    def _handle_join_leave(self, message: JoinLeaveMessage) -> None:
+        now_timestamp = datetime.now().timestamp()
+        if message.join_or_leave == JoinLeaveType.JOIN:
+            if message.slot_id not in self._slot_join_timestamp:
+                self._slot_join_timestamp[message.slot_id] = now_timestamp
+            self._state.slot_sessions[message.slot_id] += 1
+            return
+
+        join_timestamp = self._slot_join_timestamp.pop(message.slot_id, None)
+        join_timestamp = join_timestamp or self._slot_leave_timestamp[message.slot_id]
+        self._slot_leave_timestamp[message.slot_id] = now_timestamp
+        self._state.slot_playtime[message.slot_id] += now_timestamp - join_timestamp
 
     # Need to clear subscriptions for a slot when goal is reached so that users aren't spammed with item
     # sends from all the released locations. Also clear from users' registered slots.
@@ -310,22 +345,6 @@ class RoomState(Persisted[RoomStateData]):
                 matching_locations.append(location)
         return matching_locations
 
-    def death_counts(self) -> dict[SlotInfo, int]:
-        return {self._slots[slot_id]: count for slot_id, count in self._state.slot_deaths.items()}
-
-    def slot_checks_statuses(self) -> dict[SlotInfo, SlotChecksStatus]:
-        return {
-            slot: SlotChecksStatus(
-                self_freed=self._state.slot_self_freed.get(slot_id, 0),
-                other_freed=self._state.slot_other_freed.get(slot_id, 0),
-                has_released=(slot_id in self._state.slots_released),
-            )
-            for slot_id, slot in self._slots.items()
-        }
-
-    def slot_item_counts(self) -> dict[SlotInfo, SlotItemCounts]:
-        return {self._slots[slot_id]: counts for slot_id, counts in self._item_counts.items()}
-
     ################################################
     ############## SLOT REGISTRATIONS ##############
     ################################################
@@ -430,3 +449,36 @@ class RoomState(Persisted[RoomStateData]):
                     subscription.user_id == user_id and (value is None or value_norm == normalize(subscription.value))
                 )
             }
+
+    ################################################
+    ################## STATISTICS ##################
+    ################################################
+
+    def slot_playtime_data(self) -> dict[SlotInfo, SlotPlaytimeData]:
+        data: dict[SlotInfo, SlotPlaytimeData] = {}
+        now_timestamp = datetime.now().timestamp()
+        slot_ids = set(self._state.slot_sessions.keys()).union(self._state.slot_playtime.keys())
+        for slot_id in slot_ids:
+            sessions = self._state.slot_sessions.get(slot_id, 0)
+            playtime = self._state.slot_playtime.get(slot_id, 0)
+            join_timestamp = self._slot_join_timestamp.get(slot_id)
+            if join_timestamp is not None:
+                playtime += now_timestamp - join_timestamp
+            data[self._slots[slot_id]] = SlotPlaytimeData(sessions, playtime)
+        return data
+
+    def slot_death_counts(self) -> dict[SlotInfo, int]:
+        return {self._slots[slot_id]: count for slot_id, count in self._state.slot_deaths.items()}
+
+    def slot_checks_statuses(self) -> dict[SlotInfo, SlotChecksStatus]:
+        return {
+            slot: SlotChecksStatus(
+                self_freed=self._state.slot_self_freed.get(slot_id, 0),
+                other_freed=self._state.slot_other_freed.get(slot_id, 0),
+                has_released=(slot_id in self._state.slots_released),
+            )
+            for slot_id, slot in self._slots.items()
+        }
+
+    def slot_item_counts(self) -> dict[SlotInfo, SlotItemCounts]:
+        return {self._slots[slot_id]: counts for slot_id, counts in self._item_counts.items()}

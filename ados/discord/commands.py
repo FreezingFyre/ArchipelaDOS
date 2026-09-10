@@ -165,6 +165,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def room_finalize(self, ctx: BotContext) -> None:
+        self.state.flush_playtime()
         location = self._room_manager.active_room.location
         await self._room_manager.disconnect()
         await send_success(ctx, f"Disconnected from room at <{location}>")
@@ -629,11 +630,19 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
     async def deaths(self, ctx: BotContext, *, flags: StatsFlags) -> None:
-        death_counts = dict(sorted(self.state.death_counts().items(), key=lambda pair: pair[0].name))
+        death_counts = dict(sorted(self.state.slot_death_counts().items(), key=lambda pair: pair[0].name))
         if not death_counts:
             await send_message(ctx, "No death links have been triggered yet")
             return
         await self._get_plotter(flags.mode).send_deaths(ctx, death_counts)
+
+    @commands.command(name="playtime", help="Outputs data on playtime per slot", ignore_extra=False)
+    async def playtime(self, ctx: BotContext, *, flags: StatsFlags) -> None:
+        playtime_data = dict(sorted(self.state.slot_playtime_data().items(), key=lambda pair: pair[0].name))
+        if not playtime_data:
+            await send_message(ctx, "No slots have registered playtime yet")
+            return
+        await self._get_plotter(flags.mode).send_playtime(ctx, playtime_data)
 
     def _get_plotter(self, mode: StatsOutputMode) -> type[GraphPlotter] | type[TablePlotter]:
         return GraphPlotter if mode == StatsOutputMode.GRAPH else TablePlotter
