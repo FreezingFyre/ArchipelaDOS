@@ -12,8 +12,8 @@ from ados.arch.messages import (
     ConnectedMessage,
     DataPackageMessage,
     DeathLinkMessage,
+    FetchedGroupsMessage,
     GoalReachedMessage,
-    ItemGroupsMessage,
     ItemSendMessage,
     RoomUpdateMessage,
     SlotReleaseMessage,
@@ -90,7 +90,9 @@ class RoomState(Persisted[RoomStateData]):
         self._game_item_ids_by_name: dict[str, dict[str, int]] = {}
         self._game_locations: dict[str, dict[int, LocationInfo]] = {}
         self._game_location_ids_by_name: dict[str, dict[str, int]] = {}
-        self._game_groups: dict[str, set[str]] = {}
+
+        self._game_item_groups: dict[str, set[str]] = {}
+        self._game_location_groups: dict[str, set[str]] = {}
 
         # This is the information about slot item sends.
         self._item_counts: dict[int, SlotItemCounts] = defaultdict(SlotItemCounts)
@@ -99,7 +101,7 @@ class RoomState(Persisted[RoomStateData]):
         socket.add_message_handler(ConnectedMessage, self._handle_slot_update)
         socket.add_message_handler(RoomUpdateMessage, self._handle_slot_update)
         socket.add_message_handler(DataPackageMessage, self._handle_data_package)
-        socket.add_message_handler(ItemGroupsMessage, self._handle_item_groups)
+        socket.add_message_handler(FetchedGroupsMessage, self._handle_fetched_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
         socket.add_message_handler(DeathLinkMessage, self._handle_death_link)
         socket.add_message_handler(GoalReachedMessage, self._handle_slot_completed)
@@ -125,19 +127,31 @@ class RoomState(Persisted[RoomStateData]):
             self._game_location_ids_by_name[game] = {normalize(location.name): location.id for location in locations}
         _log.info("Populated packaged data for %d games", len(message.game_items))
 
-    # The ItemGroupsMessage is sent once on startup, to populate item group mappings for
-    # each game.
-    def _handle_item_groups(self, message: ItemGroupsMessage) -> None:
-        self._game_groups = {game: set(groups) for game, groups in message.game_groups.items()}
+    # The FetchedGroupsMessage is sent once on startup, to populate item and location group mappings
+    # for each game.
+    def _handle_fetched_groups(self, message: FetchedGroupsMessage) -> None:
+        self._game_item_groups = {game: set(groups) for game, groups in message.game_item_groups.items()}
+        self._game_location_groups = {game: set(groups) for game, groups in message.game_location_groups.items()}
+
         for game, items in self._game_items.items():
-            if not game in message.game_item_groups:
+            if not game in message.game_items_to_groups:
                 continue
             new_items: dict[int, ItemInfo] = {}
             for item_id, item in items.items():
-                groups = message.game_item_groups[game].get(item.name, [])
+                groups = message.game_items_to_groups[game].get(item.name, [])
                 new_items[item_id] = item._replace(groups=groups)  # pylint: disable = protected-access
             items.update(new_items)
-        _log.info("Populated item groups for %d games", len(message.game_item_groups))
+
+        for game, locations in self._game_locations.items():
+            if not game in message.game_locations_to_groups:
+                continue
+            new_locations: dict[int, LocationInfo] = {}
+            for location_id, location in locations.items():
+                groups = message.game_locations_to_groups[game].get(location.name, [])
+                new_locations[location_id] = location._replace(groups=groups)  # pylint: disable = protected-access
+            locations.update(new_locations)
+
+        _log.info("Populated item and location groups for %d games", len(message.game_item_groups))
 
     # Whenever an item is sent, append it to the item log both on disk and in memory.
     def _handle_item_send(self, message: ItemSendMessage) -> None:
@@ -225,8 +239,11 @@ class RoomState(Persisted[RoomStateData]):
     def all_slots(self) -> list[SlotInfo]:
         return list(self._slots.values())
 
-    def all_groups(self, game: str) -> set[str]:
-        return self._game_groups.get(game, set())
+    def all_item_groups(self, game: str) -> set[str]:
+        return self._game_item_groups.get(game, set())
+
+    def all_location_groups(self, game: str) -> set[str]:
+        return self._game_location_groups.get(game, set())
 
     def resolve_slot(self, value: str | int) -> SlotInfo:
         if isinstance(value, int):
@@ -239,12 +256,12 @@ class RoomState(Persisted[RoomStateData]):
             raise ADOSError(f"Slot `{value}` does not exist in the multiworld")
         return self._slots[self._slot_ids_by_name[value_norm]]
 
-    def resolve_group(self, game: str, group: str) -> str:
+    def resolve_item_group(self, game: str, group: str) -> str:
         group_norm = normalize(group)
-        for game_group in self._game_groups.get(game, set()):
+        for game_group in self._game_item_groups.get(game, set()):
             if normalize(game_group) == group_norm:
                 return game_group
-        raise ADOSError(f"Group `{group}` does not exist in game `{game}`")
+        raise ADOSError(f"Item group `{group}` does not exist in game `{game}`")
 
     def resolve_item(self, game: str, value: str | int) -> ItemInfo:
         if isinstance(value, int):
@@ -265,6 +282,13 @@ class RoomState(Persisted[RoomStateData]):
             if search_text_norm in normalize(item.name):
                 matching_items.append(item)
         return matching_items
+
+    def resolve_location_group(self, game: str, group: str) -> str:
+        group_norm = normalize(group)
+        for game_group in self._game_location_groups.get(game, set()):
+            if normalize(game_group) == group_norm:
+                return game_group
+        raise ADOSError(f"Location group `{group}` does not exist in game `{game}`")
 
     def resolve_location(self, game: str, value: str | int) -> LocationInfo:
         if isinstance(value, int):
