@@ -5,11 +5,25 @@ import discord
 import matplotlib.pyplot as plt
 from matplotlib.container import BarContainer
 
-from ados.common import ItemCategory, SlotFullStatus, SlotInfo, SlotItemCounts
+from ados.common import (
+    ItemCategory,
+    SlotFullStatus,
+    SlotInfo,
+    SlotItemCounts,
+    SlotPlaytimeData,
+)
 from ados.discord.common import BotContext, send_table
 
 BAR_COLORS = ["#2C3947", "#547A95", "#C2A56D", "#C16E6E"]
 SHADOW_COLOR = "#E8EDF2"
+
+
+def _playtime_values(playtime: float) -> tuple[int, int, int]:
+    seconds = int(playtime)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds %= 60
+    return hours, minutes, seconds
 
 
 class TablePlotter:
@@ -77,6 +91,16 @@ class TablePlotter:
         for slot, count in death_counts.items():
             table["Slot"].append(str(slot))
             table["Deaths"].append(str(count))
+        await send_table(ctx, table, right_just=True)
+
+    @staticmethod
+    async def send_playtime(ctx: BotContext, playtime_data: dict[SlotInfo, SlotPlaytimeData]) -> None:
+        table: dict[str, list[str]] = {"Slot": [], "Sessions": [], "Playtime": []}
+        for slot, data in playtime_data.items():
+            hours, minutes, seconds = _playtime_values(data.playtime)
+            table["Slot"].append(str(slot))
+            table["Sessions"].append(str(data.sessions))
+            table["Playtime"].append(f"{hours}h {minutes:02}m {seconds:02}s")
         await send_table(ctx, table, right_just=True)
 
 
@@ -160,6 +184,35 @@ class GraphPlotter:
             columns=[str(slot) for slot in death_counts.keys()],
             bar_values=[list(death_counts.values())],
             bar_labels=[str(val) for val in death_counts.values()],
+        )
+
+    @staticmethod
+    async def send_playtime(ctx: BotContext, playtime_data: dict[SlotInfo, SlotPlaytimeData]) -> None:
+        slots = [str(slot) for slot in playtime_data.keys()]
+        max_playtime = max(data.playtime for data in playtime_data.values())
+        use_minutes = max_playtime < 120 * 60  # Use minutes as unit if playtime is small
+
+        values: list[float] = []
+        labels: list[str] = []
+        for data in playtime_data.values():
+            hours, minutes, seconds = _playtime_values(data.playtime)
+            values.append(data.playtime / (60 if use_minutes else 3600))
+            labels.append(f"{minutes}:{seconds:02}" if use_minutes else f"{hours}:{minutes:02}")
+
+        await GraphPlotter._send_graph(
+            ctx,
+            title=f"Playtime ({"minutes" if use_minutes else "hours"})",
+            columns=slots,
+            bar_values=[values],
+            bar_labels=labels,
+        )
+
+        await GraphPlotter._send_graph(
+            ctx,
+            title="Play Sessions",
+            columns=slots,
+            bar_values=[[data.sessions for data in playtime_data.values()]],
+            bar_labels=[str(data.sessions) for data in playtime_data.values()],
         )
 
     @staticmethod

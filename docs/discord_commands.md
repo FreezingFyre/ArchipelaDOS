@@ -89,6 +89,7 @@ Some fun and useful stats are aggregated by the bot during its run. These comman
 
 | | |
 |-|-|
-| `!checks <graph\|list\|table>` | Outputs data on completed/total checks per slot, in graph or table format |
-| `!items <graph\|list\|table>`  | Outputs data on types of items sent/received per slot, in graph or table format |
-| `!deaths <graph\|list\|table>` | Outputs data on death links triggered per slot, in graph or table format |
+| `!checks <graph\|list\|table>`   | Outputs data on completed/total checks per slot, in graph or table format |
+| `!items <graph\|list\|table>`    | Outputs data on types of items sent/received per slot, in graph or table format |
+| `!deaths <graph\|list\|table>`   | Outputs data on death links triggered per slot, in graph or table format |
+| `!playtime <graph\|list\|table>` | Outputs data on playtime per slot, in graph or table format |
