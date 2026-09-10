@@ -663,6 +663,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         "Farewell",
         "I shall see it done",
         "It shall be so",
+        "It's been a pleasure",
         "Roger that",
         "Sayonara",
         "Until we meet again",

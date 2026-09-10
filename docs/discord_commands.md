@@ -93,3 +93,12 @@ Some fun and useful stats are aggregated by the bot during its run. These comman
 | `!items <graph\|list\|table>`    | Outputs data on types of items sent/received per slot, in graph or table format |
 | `!deaths <graph\|list\|table>`   | Outputs data on death links triggered per slot, in graph or table format |
 | `!playtime <graph\|list\|table>` | Outputs data on playtime per slot, in graph or table format |
+
+## Extra commands
+
+Extra fun commands that can be used to kill your friends! Since these commands are abusable, they must be explicitly (and individually) enabled in the bot's configuration.
+
+| | |
+|-|-|
+| `!deathlink`           | Trigger an immediate death link |
+| `!deathpoll [timeout]` | Trigger a death link after the specified `timeout` ("30m", "50s", etc) if enough users vote in favor |
