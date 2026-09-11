@@ -23,6 +23,7 @@ from ados.arch.messages import (
 from ados.arch.socket import SocketClient
 from ados.common import (
     ADOSError,
+    FinishState,
     ItemCategory,
     ItemCategoryFilter,
     ItemInfo,
@@ -65,7 +66,7 @@ class RoomStateData(BaseModel):
     slot_deaths: DefaultDict[int, int] = defaultdict(int)
     slot_self_freed: DefaultDict[int, int] = defaultdict(int)
     slot_other_freed: DefaultDict[int, int] = defaultdict(int)
-    slots_released: set[int] = set()
+    slots_finished: dict[int, FinishState] = {}
     slot_playtime: DefaultDict[int, float] = defaultdict(float)
     slot_sessions: DefaultDict[int, int] = defaultdict(int)
 
@@ -193,7 +194,7 @@ class RoomState(Persisted[RoomStateData]):
         with open(self._item_log_file, "a") as log_file:
             log_file.write(f"{json.dumps(sent_item._asdict())}\n")  # pylint: disable = protected-access
 
-        if message.from_slot_id in self._state.slots_released or message.to_slot_id in self._state.slots_released:
+        if message.from_slot_id in self._state.slots_finished or message.to_slot_id in self._state.slots_finished:
             self._record_auto_item(message.from_slot_id, message.to_slot_id)
 
     @Persisted.persist
@@ -219,9 +220,14 @@ class RoomState(Persisted[RoomStateData]):
     # sends from all the released locations. Also clear from users' registered slots.
     @Persisted.persist
     def _handle_slot_completed(self, message: GoalReachedMessage | SlotReleaseMessage) -> None:
-        if message.slot_id in self._state.slots_released:
+        if message.slot_id in self._state.slots_finished:
+            if isinstance(message, GoalReachedMessage):
+                self._state.slots_finished[message.slot_id] = FinishState.GOAL
             return
-        self._state.slots_released.add(message.slot_id)
+        self._state.slots_finished[message.slot_id] = (
+            FinishState.GOAL if isinstance(message, GoalReachedMessage) else FinishState.RELEASED
+        )
+
         if message.slot_id in self._state.slot_subscriptions:
             self._state.slot_subscriptions.pop(message.slot_id)
         for user_id in list(self._state.user_slot_ids.keys()):
@@ -235,9 +241,9 @@ class RoomState(Persisted[RoomStateData]):
         if from_slot_id == to_slot_id:
             self._state.slot_self_freed[from_slot_id] += 1
             return
-        if from_slot_id in self._state.slots_released:
+        if from_slot_id in self._state.slots_finished:
             self._state.slot_self_freed[from_slot_id] += 1
-        if to_slot_id in self._state.slots_released:
+        if to_slot_id in self._state.slots_finished:
             self._state.slot_other_freed[from_slot_id] += 1
 
     def _record_item_category(self, info: SentItemInfo) -> None:
@@ -475,10 +481,13 @@ class RoomState(Persisted[RoomStateData]):
             slot: SlotChecksStatus(
                 self_freed=self._state.slot_self_freed.get(slot_id, 0),
                 other_freed=self._state.slot_other_freed.get(slot_id, 0),
-                has_released=(slot_id in self._state.slots_released),
+                has_released=(slot_id in self._state.slots_finished),
             )
             for slot_id, slot in self._slots.items()
         }
 
     def slot_item_counts(self) -> dict[SlotInfo, SlotItemCounts]:
         return {self._slots[slot_id]: counts for slot_id, counts in self._item_counts.items()}
+
+    def get_finish_state(self, slot_id: int) -> Optional[FinishState]:
+        return self._state.slots_finished.get(slot_id, None)
