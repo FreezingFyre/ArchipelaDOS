@@ -204,6 +204,9 @@ class RoomState(Persisted[RoomStateData]):
 
     @Persisted.persist
     def _handle_join_leave(self, message: JoinLeaveMessage) -> None:
+        if message.slot_id in self._state.slots_finished:
+            return
+
         now_timestamp = datetime.now().timestamp()
         if message.join_or_leave == JoinLeaveType.JOIN:
             if message.slot_id not in self._slot_join_timestamp:
@@ -217,7 +220,8 @@ class RoomState(Persisted[RoomStateData]):
         self._state.slot_playtime[message.slot_id] += now_timestamp - join_timestamp
 
     # Need to clear subscriptions for a slot when goal is reached so that users aren't spammed with item
-    # sends from all the released locations. Also clear from users' registered slots.
+    # sends from all the released locations. Also clear from users' registered slots and immediately
+    # finalize playtime.
     @Persisted.persist
     def _handle_slot_completed(self, message: GoalReachedMessage | SlotReleaseMessage) -> None:
         if message.slot_id in self._state.slots_finished:
@@ -227,6 +231,12 @@ class RoomState(Persisted[RoomStateData]):
         self._state.slots_finished[message.slot_id] = (
             FinishState.GOAL if isinstance(message, GoalReachedMessage) else FinishState.RELEASED
         )
+
+        join_timestamp = self._slot_join_timestamp.pop(message.slot_id, None)
+        if join_timestamp is not None:
+            now_timestamp = datetime.now().timestamp()
+            self._slot_leave_timestamp[message.slot_id] = now_timestamp
+            self._state.slot_playtime[message.slot_id] += now_timestamp - join_timestamp
 
         if message.slot_id in self._state.slot_subscriptions:
             self._state.slot_subscriptions.pop(message.slot_id)
