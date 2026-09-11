@@ -699,12 +699,12 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     async def deathpoll(self, ctx: BotContext, *, flags: DeathPollFlags) -> None:
         if isinstance(ctx.channel, discord.DMChannel):
             raise ADOSError("Cannot start a death link poll in DMs")
-        self._ensure_cooldown(ExtraCommand.DEATHPOLL)
         timeout = (
             cast(timedelta, flags.timeout) if flags.timeout is not None else self._config.default_deathpoll_timeout
         )
         if timeout < timedelta(seconds=30):
             raise ADOSError("Timeout for death link poll must be at least 30 seconds")
+        self._ensure_cooldown(ExtraCommand.DEATHPOLL)
         self._death_poll_manager.create_death_poll(ctx, timeout, self._send_death_link)
 
     async def _send_death_link(self) -> None:
