@@ -107,6 +107,12 @@ class SubscriptionType(str, Enum):
     FILTER = "filter"
 
 
+# Whether a slot was completed by releasing its items or completing its goal
+class FinishState(str, Enum):
+    GOAL = "goal"
+    RELEASED = "released"
+
+
 # Possible statuses of a hint, as per the Archipelago spec.
 class HintStatus(int, Enum):
     UNSPECIFIED = 0

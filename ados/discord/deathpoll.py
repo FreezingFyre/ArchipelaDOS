@@ -29,7 +29,12 @@ def _get_update_times(timeout: timedelta) -> tuple[datetime, list[UpdateTimeData
     now_timestamp = datetime.now()
     finish_timestamp = now_timestamp + timeout
 
-    minutes = int(timeout.total_seconds()) // 60
+    hours = int(timeout.total_seconds()) // 3600
+    for hours_left in range(hours, 1, -1):
+        delta = timedelta(hours=hours_left)
+        times.append(UpdateTimeData(finish_timestamp - delta, delta))
+
+    minutes = min(119, int(timeout.total_seconds()) // 60)
     for minutes_left in range(minutes, 0, -1):
         delta = timedelta(minutes=minutes_left)
         times.append(UpdateTimeData(finish_timestamp - delta, delta))

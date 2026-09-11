@@ -13,9 +13,10 @@ from ados.arch.messages import (
     JoinLeaveType,
     PlayerChatMessage,
     ServerChatMessage,
+    SlotReleaseMessage,
 )
 from ados.arch.socket import SocketClient
-from ados.common import ItemCategory, ItemCategoryFilter
+from ados.common import FinishState, ItemCategory, ItemCategoryFilter
 from ados.config import ADOSConfig, BroadcastCategory
 from ados.discord.common import highlight
 from ados.state import RoomState
@@ -106,6 +107,7 @@ class MessageBroadcaster:
         self._socket.add_message_handler(PlayerChatMessage, self._handle_player_chat)
         self._socket.add_message_handler(ServerChatMessage, self._handle_server_chat)
         self._socket.add_message_handler(GoalReachedMessage, self._handle_goal_reached)
+        self._socket.add_message_handler(SlotReleaseMessage, self._handle_slot_release)
 
     # Called by the bot when it is properly connected to Discord and ready to send.
     def start(self, guild: discord.Guild) -> None:
@@ -280,6 +282,18 @@ class MessageBroadcaster:
         content = f":trophy: {highlight(slot)} has reached their goal!"
 
         _log.info("Handling goal reached for '%s'", slot)
+        self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
+
+    def _handle_slot_release(self, message: SlotReleaseMessage) -> None:
+        if not (channel_names := self._filter_channels(lambda config: config.send_goal_reached)):
+            return
+        if self._state.get_finish_state(message.slot_id) == FinishState.GOAL:
+            return
+
+        slot = self._state.resolve_slot(message.slot_id)
+        content = f":broken_chain: {highlight(slot)} has released their remaining items"
+
+        _log.info("Handling items released for '%s'", slot)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _filter_channels(self, predicate: Callable[[BroadcastConfig], bool]) -> list[str]:
