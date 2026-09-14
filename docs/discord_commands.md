@@ -73,7 +73,7 @@ Another useful feature of the bot is the ability of users to subscribe to partic
 
 ## Hint commands
 
-If a slot is password-less, the bot can be used to facilitate hint operations on it. These hints consume the required number of hint points, just as they would if executed through a normal text client. When hinting for an item or location using the below commands, the `slot` only needs to be specified if the item or location exists in multiple registered slots. The bot intelligently sends the hint request for the slot containing the item or location.
+The bot can also be used to facilitate hint operations for all the slots in the room. These hints consume the required number of hint points, just as they would if executed through a normal text client. When hinting for an item or location using the below commands, the `slot` only needs to be specified if the item or location exists in multiple registered slots. The bot intelligently sends the hint request for the slot containing the item or location.
 
 | | |
 |-|-|
