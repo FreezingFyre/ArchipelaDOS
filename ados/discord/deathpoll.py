@@ -6,7 +6,7 @@ from typing import Awaitable, Callable, NamedTuple, Optional
 from discord.message import Message
 
 from ados.common import describe_timeout
-from ados.discord.common import BotContext
+from ados.discord.common import BotContext, EmojiType
 
 _log = logging.getLogger(__name__)
 
@@ -14,9 +14,6 @@ MESSAGE = ":clipboard: A death poll has been triggered! React to this message be
 KILL_MESSAGE = ":clipboard: This death poll has expired. Death link triggered {result}"
 SAFE_MESSAGE = ":clipboard: This death poll has expired. Death link averted {result}"
 CANCEL_MESSAGE = ":clipboard: This death poll was interrupted before it could complete"
-
-YES_EMOJI = "💀"
-NO_EMOJI = "😇"
 
 
 class UpdateTimeData(NamedTuple):
@@ -54,6 +51,8 @@ class DeathPollManager:
     def __init__(self) -> None:
         self._poll_id = 0
         self._polls: dict[int, asyncio.Task[None]] = {}
+        self._yes_emoji: EmojiType = "💀"
+        self._no_emoji: EmojiType = "😇"
 
     def create_death_poll(self, ctx: BotContext, timeout: timedelta, on_kill: Callable[[], Awaitable[None]]) -> None:
         _log.info("Initiating a death poll that expires in %s", describe_timeout(timeout))
@@ -69,6 +68,14 @@ class DeathPollManager:
             poll.cancel()
         self._polls.clear()
 
+    # Custom emojis may not be resolvable until after the bot connects to Discord, and so
+    # must be set after the manager initializes.
+    def override_emojis(self, yes_emoji: Optional[EmojiType], no_emoji: Optional[EmojiType]) -> None:
+        if yes_emoji is not None:
+            self._yes_emoji = yes_emoji
+        if no_emoji is not None:
+            self._no_emoji = no_emoji
+
     async def _run_poll(
         self,
         poll_id: int,
@@ -80,8 +87,8 @@ class DeathPollManager:
         try:
             finish_timestamp, update_times = _get_update_times(timeout)
             message = await ctx.send(MESSAGE.format(timeout=describe_timeout(timeout)))
-            await message.add_reaction(YES_EMOJI)
-            await message.add_reaction(NO_EMOJI)
+            await message.add_reaction(self._yes_emoji)
+            await message.add_reaction(self._no_emoji)
 
             # Each of these represents a time when the poll message should be updated.
             for time in update_times:
@@ -92,15 +99,19 @@ class DeathPollManager:
             await asyncio.sleep((finish_timestamp - datetime.now()).total_seconds())
 
             message = await ctx.fetch_message(message.id)
-            votes = {str(reaction.emoji): reaction.count for reaction in message.reactions}
-            votes_yes = votes.get(YES_EMOJI, 1) - 1
-            votes_no = votes.get(NO_EMOJI, 1) - 1
+            votes = {reaction.emoji: reaction.count for reaction in message.reactions}
+            votes_yes = votes.get(self._yes_emoji, 1) - 1
+            votes_no = votes.get(self._no_emoji, 1) - 1
             will_kill = votes_yes > votes_no
 
             _log.info("Death poll concluded with kill status %s: %d to %d", str(will_kill), votes_yes, votes_no)
 
             if will_kill:
-                await on_kill()
+                try:
+                    await on_kill()
+                except Exception as ex:
+                    _log.warning("Death poll failed to trigger a death link: %s", ex)
+
             result_text = (KILL_MESSAGE if will_kill else SAFE_MESSAGE).format(result=f"{votes_yes}-{votes_no}")
             await message.edit(content=result_text)
             self._polls.pop(poll_id, None)
@@ -108,3 +119,8 @@ class DeathPollManager:
         except asyncio.CancelledError:
             if message is not None:
                 await message.edit(content=CANCEL_MESSAGE)
+
+        except Exception as ex:
+            _log.error("Error when running death poll: %s", ex)
+            if message is not None:
+                await message.delete()

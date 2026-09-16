@@ -45,9 +45,9 @@ discord_broadcast_channels: {}
 discord_mention_channel_blacklist: []
 
 
-##################
-# EXTRA COMMANDS #
-##################
+###################
+# COMMAND DETAILS #
+###################
 
 # List of extra commands to enable. These commands may not be suitable for all users/servers, as
 # they can be easily abused. These are the extra commands that can be enabled:
@@ -68,9 +68,17 @@ extra_commands_enabled: []
 # }
 extra_command_cooldowns: {}
 
-# Default timeout of the "deathpoll" command, assuming it is enabled. This should be a time expressed
-# as a string with h/m/s units. For example: "5m" or "1m30s".
-default_deathpoll_timeout: 3m
+# Default, minimum, and maximum timeouts for the "deathpoll" command, assuming it's enabled. The default
+# is necessary, but the min/max can be set to null if no such bounds are desired. If specified, these
+# should be times expressed as strings with h/m/s units. For example: "5m" or "1m30s".
+deathpoll_timeout_default: 3m
+deathpoll_timeout_minimum: 30s
+deathpoll_timeout_maximum: null
+
+# Overrides for the emojis used in death polls. If specified, these should be literal emojis or names
+# of guild emojis.
+deathpoll_yes_emoji_override: null
+deathpoll_no_emoji_override: null
 
 
 #########################
@@ -81,9 +89,23 @@ default_deathpoll_timeout: 3m
 # this directory will be created per-room, so different rooms will not interfere with each other.
 data_path: data
 
-# The file containing custom death link messages, if desired. This file should be formatted
-# with one message per line, where each line includes a {player} token that will be replaced
-# with the name of the player who died.
+# The file containing custom death link messages, if desired. This file should be formatted with one
+# message per line, where each line generally includes a {player} token that will be replaced with
+# the name of the player who died.
+#
+# You can also denote messages that should specifically be used when the the bot triggers a death link
+# via the "deathlink"/"deathpoll" commands by starting a line with "BOT_DEATHLINK:" or "BOT_DEATHPOLL:".
+# For these lines, the {player} token is optional. If no messages for "deathlink"/"deathpoll" are
+# specified, those death links will pull from the normal pool of messages.
+#
+# Here is an example of the contents of this file:
+#
+# {player} made like a tree and got the hell out of there.
+# {player} was squished into a {player} sandwich.
+# {player} died of dysentery.
+# BOT_DEATHLINK: ArchipelaDOS gave the thumbs-down.
+# BOT_DEATHPOLL: The judgement was decisive, and the justice is swift.
+#
 death_link_messages_path: null
 
 # The minimum logging level to record. Must be one of: "debug", "info", "warning", "error", "critical".

@@ -222,6 +222,7 @@ class GraphPlotter:
         max_value: Optional[float] = None,
     ) -> None:
         plt.figure(figsize=(max(8, len(columns) * 0.5), 6))
+        total_values = [sum(vals) for vals in zip(*bar_values)]
 
         top: Optional[BarContainer] = None
         for idx, values in enumerate(bar_values):
@@ -230,9 +231,8 @@ class GraphPlotter:
             )
             top = plt.bar(columns, values, bottom=current, color=BAR_COLORS[idx])
         if bar_shadows is not None:
-            current = [sum(vals) for vals in zip(*bar_values)]
-            values = [shadow - curr for shadow, curr in zip(bar_shadows, current)]
-            plt.bar(columns, values, bottom=current, color=SHADOW_COLOR)
+            values = [shadow - total for shadow, total in zip(bar_shadows, total_values)]
+            plt.bar(columns, values, bottom=total_values, color=SHADOW_COLOR)
 
         if bar_labels is not None:
             assert top is not None
@@ -247,7 +247,9 @@ class GraphPlotter:
                     column_label.set_fontweight("bold")
 
         if legend is not None:
-            plt.legend(legend, reverse=True, fontsize="small", loc="upper right")
+            half_boundary = 0.5 * (max_value or max(total_values))
+            location = "upper right" if total_values[-1] < half_boundary else "lower right"
+            plt.legend(legend, reverse=True, fontsize="small", loc=location)
 
         plt.title(title, fontsize=16)
         plt.xlabel("Slot", fontsize=14)

@@ -10,6 +10,7 @@ from websockets.typing import Data
 
 from ados.common import (
     ADOSError,
+    DeathLinkSource,
     HintInfo,
     HintStatus,
     ItemCategory,
@@ -106,13 +107,13 @@ def get_status_message() -> str:
 
 
 # Sent to the server to trigger a death link from the bot.
-def get_death_link_message(self_name: str) -> str:
+def get_death_link_message(self_name: str, source: DeathLinkSource) -> str:
     return json.dumps(
         [
             {
                 "cmd": "Bounce",
                 "tags": ["DeathLink"],
-                "data": {"time": datetime.now().timestamp(), "source": self_name},
+                "data": {"time": datetime.now().timestamp(), "source": self_name, "ados": source.value},
             }
         ]
     )
@@ -211,7 +212,12 @@ class ItemSendMessage:
 # Sent by the server when a slot triggers a death link.
 class DeathLinkMessage:
     def __init__(self, data: dict[str, Any]) -> None:
+        source = data["data"].get("ados")
         self.slot_name: str = data["data"]["source"]
+        try:
+            self.source = DeathLinkSource(source) if source is not None else DeathLinkSource.OTHER
+        except Exception:
+            self.source = DeathLinkSource.OTHER
 
 
 # Sent by the server when a slot connects or disconnects.

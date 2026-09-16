@@ -113,6 +113,14 @@ class FinishState(str, Enum):
     RELEASED = "released"
 
 
+# Where a death link originated. A bot-specific source is sent alongside any death link
+# that originates from ArchipelaDOS.
+class DeathLinkSource(str, Enum):
+    OTHER = "other"
+    BOT_DEATHLINK = "bot_deathlink"
+    BOT_DEATHPOLL = "bot_deathpoll"
+
+
 # Possible statuses of a hint, as per the Archipelago spec.
 class HintStatus(int, Enum):
     UNSPECIFIED = 0

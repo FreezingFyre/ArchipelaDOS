@@ -22,6 +22,7 @@ from ados.arch.messages import (
 from ados.arch.socket import SocketClient
 from ados.common import (
     ADOSError,
+    DeathLinkSource,
     HintInfo,
     HintStatusFilter,
     ItemCategoryFilter,
@@ -82,11 +83,11 @@ class TimeDeltaArg(commands.Converter[timedelta]):
 
 class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
-    def __init__(self, config: ADOSConfig, room_manager: ActiveRoomManager):
+    def __init__(self, config: ADOSConfig, room_manager: ActiveRoomManager, death_poll_manager: DeathPollManager):
         super().__init__()
         self._config = config
         self._room_manager = room_manager
-        self._death_poll_manager = DeathPollManager()
+        self._death_poll_manager = death_poll_manager
         self._last_used_timestamps: dict[ExtraCommand, datetime] = defaultdict(lambda: datetime.min)
 
         # Disable and hide all the extra commands that are not explicitly enabled in the config.
@@ -692,21 +693,28 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if isinstance(ctx.channel, discord.DMChannel):
             raise ADOSError("Cannot trigger a death link from DMs")
         self._ensure_cooldown(ExtraCommand.DEATHLINK)
-        await self._send_death_link()
+        await self._send_death_link(DeathLinkSource.BOT_DEATHLINK)
         await send_message(ctx, random.choice(Commands.FAREWELLS))
 
     @commands.command(name="deathpoll", help="Poll if death link should trigger after a timeout", ignore_extra=False)
     async def deathpoll(self, ctx: BotContext, *, flags: DeathPollFlags) -> None:
         if isinstance(ctx.channel, discord.DMChannel):
-            raise ADOSError("Cannot start a death link poll in DMs")
+            raise ADOSError("Cannot start a death poll in DMs")
         timeout = (
-            cast(timedelta, flags.timeout) if flags.timeout is not None else self._config.default_deathpoll_timeout
+            cast(timedelta, flags.timeout) if flags.timeout is not None else self._config.deathpoll_timeout_default
         )
-        if timeout < timedelta(seconds=30):
-            raise ADOSError("Timeout for death link poll must be at least 30 seconds")
-        self._ensure_cooldown(ExtraCommand.DEATHPOLL)
-        self._death_poll_manager.create_death_poll(ctx, timeout, self._send_death_link)
+        minimum = self._config.deathpoll_timeout_minimum or timedelta.min
+        maximum = self._config.deathpoll_timeout_maximum or timedelta.max
+        if timeout < minimum:
+            raise ADOSError(f"Timeout for death poll must be at least {describe_timeout(minimum)}")
+        if timeout > maximum:
+            raise ADOSError(f"Timeout for death poll must not exceed {describe_timeout(maximum)}")
 
-    async def _send_death_link(self) -> None:
+        self._ensure_cooldown(ExtraCommand.DEATHPOLL)
+        self._death_poll_manager.create_death_poll(
+            ctx, timeout, lambda: self._send_death_link(DeathLinkSource.BOT_DEATHPOLL)
+        )
+
+    async def _send_death_link(self, bot_source: DeathLinkSource) -> None:
         self_name = self._room_manager.active_room.slot
-        await self.socket.send_message(get_death_link_message(self_name))
+        await self.socket.send_message(get_death_link_message(self_name, bot_source))

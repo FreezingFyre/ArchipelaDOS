@@ -41,12 +41,16 @@ When an item is sent from one slot to another, the bot broadcasts a message indi
 
 ### Death links
 
-When a death link is triggered in the multiworld, the bot can broadcast a message featuring the slot/player who died. Custom death link messages can be configured via the `death_link_messages_path` option in `config.yaml`. This file should contain one message per line, each including a `{player}` token that will be replaced with the dying slot's name. For example:
+When a death link is triggered in the multiworld, the bot can broadcast a message featuring the slot/player who died. Custom death link messages can be configured via the `death_link_messages_path` option in `config.yaml`. This file should contain one message per line, each generally including a `{player}` token that will be replaced with the dying slot's name.
+
+It's also possible to denote messages that should specifically be used when the bot triggers a death link via the `!deathlink` and `!deathpoll` commands. These lines should start with `BOT_DEATHLINK:` or `BOT_DEATHPOLL:`, and the `{player}` token is optional for them. If no messages for `!deathlink`/`!deathpoll` are specified, those death links will pull from the normal pool of messages. For example, this file could contain:
 
 ```
+{player} made like a tree and got the hell out of there.
+{player} was squished into a {player} sandwich.
 {player} died of dysentery.
-It's super effective! {player} fainted.
-{player} took a calculated risk. Too bad they're bad at math.
+BOT_DEATHLINK: ArchipelaDOS gave the thumbs-down.
+BOT_DEATHPOLL: The judgement was decisive, and the justice is swift.
 ```
 
 If no custom messages file is provided, the default message `{player} has triggered a death link` is used.
