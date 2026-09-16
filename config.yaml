@@ -89,9 +89,23 @@ deathpoll_no_emoji_override: null
 # this directory will be created per-room, so different rooms will not interfere with each other.
 data_path: data
 
-# The file containing custom death link messages, if desired. This file should be formatted
-# with one message per line, where each line includes a {player} token that will be replaced
-# with the name of the player who died.
+# The file containing custom death link messages, if desired. This file should be formatted with one
+# message per line, where each line generally includes a {player} token that will be replaced with
+# the name of the player who died.
+#
+# You can also denote messages that should specifically be used when the the bot triggers a death link
+# via the "deathlink"/"deathpoll" commands by starting a line with "BOT_DEATHLINK:" or "BOT_DEATHPOLL:".
+# For these lines, the {player} token is optional. If no messages for "deathlink"/"deathpoll" are
+# specified, those death links will pull from the normal pool of messages.
+#
+# Here is an example of the contents of this file:
+#
+# {player} made like a tree and got the hell out of there.
+# {player} was squished into a {player} sandwich.
+# {player} died of dysentery.
+# BOT_DEATHLINK: ArchipelaDOS gave the thumbs-down.
+# BOT_DEATHPOLL: The judgement was decisive, and the justice is swift.
+#
 death_link_messages_path: null
 
 # The minimum logging level to record. Must be one of: "debug", "info", "warning", "error", "critical".

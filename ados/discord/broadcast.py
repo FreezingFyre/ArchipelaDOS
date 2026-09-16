@@ -16,7 +16,7 @@ from ados.arch.messages import (
     SlotReleaseMessage,
 )
 from ados.arch.socket import SocketClient
-from ados.common import FinishState, ItemCategory, ItemCategoryFilter
+from ados.common import DeathLinkSource, FinishState, ItemCategory, ItemCategoryFilter
 from ados.config import ADOSConfig, BroadcastCategory
 from ados.discord.common import highlight
 from ados.state import RoomState
@@ -142,28 +142,32 @@ class MessageBroadcaster:
         _log.info("Sending admin alert message: '%s'", message)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
-    def _load_death_link_messages(self, path: Optional[str]) -> list[str]:
-
+    def _load_death_link_messages(self, path: Optional[str]) -> dict[DeathLinkSource, list[str]]:
+        on_error_messages = {source: DEFAULT_DEATH_LINK_MESSAGES for source in DeathLinkSource}
         if not path:
-            return DEFAULT_DEATH_LINK_MESSAGES
+            return on_error_messages
 
+        messages: dict[DeathLinkSource, list[str]] = {source: [] for source in DeathLinkSource}
+        bad_messages: list[str] = []
         try:
-            messages: list[str] = []
-            bad_messages: list[str] = []
             with open(path, "r") as file:
                 for line in file:
                     line = line.strip()
                     if not line:
                         continue
-                    if "{player}" in line:
-                        messages.append(line)
+                    if line.startswith("BOT_DEATHLINK:"):
+                        messages[DeathLinkSource.BOT_DEATHLINK].append(line.removeprefix("BOT_DEATHLINK:").strip())
+                    elif line.startswith("BOT_DEATHPOLL:"):
+                        messages[DeathLinkSource.BOT_DEATHPOLL].append(line.removeprefix("BOT_DEATHPOLL:").strip())
+                    elif "{player}" in line:
+                        messages[DeathLinkSource.OTHER].append(line)
                     else:
                         bad_messages.append(line)
         except Exception as ex:
             _log.error("Error loading death link messages from '%s': %s", path, ex)
-            return DEFAULT_DEATH_LINK_MESSAGES
+            return on_error_messages
 
-        _log.info("Loaded %d death link messages from '%s'", len(messages), path)
+        _log.info("Loaded %d death link messages from '%s'", sum(len(lines) for lines in messages.values()), path)
         if bad_messages:
             _log.warning(
                 "Ignored %d death link messages from '%s' missing {player} token: %s",
@@ -171,7 +175,12 @@ class MessageBroadcaster:
                 path,
                 bad_messages,
             )
-        return messages if messages else DEFAULT_DEATH_LINK_MESSAGES
+        if not messages[DeathLinkSource.OTHER]:
+            messages[DeathLinkSource.OTHER] = DEFAULT_DEATH_LINK_MESSAGES
+        for source, lines in messages.items():
+            if not lines:
+                messages[source] = messages[DeathLinkSource.OTHER]
+        return messages
 
     async def _broadcast_loop(self) -> None:
         while True:
@@ -236,7 +245,7 @@ class MessageBroadcaster:
             return
 
         content = highlight(message.slot_name)
-        content = random.choice(self._death_link_messages).format(player=content)
+        content = random.choice(self._death_link_messages[message.source]).format(player=content)
         content = f":headstone: {content}"
 
         _log.info("Handling death link from '%s'", message.slot_name)

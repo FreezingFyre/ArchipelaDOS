@@ -22,7 +22,7 @@ from ados.arch.messages import (
 from ados.arch.socket import SocketClient
 from ados.common import (
     ADOSError,
-    BotDeathSource,
+    DeathLinkSource,
     HintInfo,
     HintStatusFilter,
     ItemCategoryFilter,
@@ -693,7 +693,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
         if isinstance(ctx.channel, discord.DMChannel):
             raise ADOSError("Cannot trigger a death link from DMs")
         self._ensure_cooldown(ExtraCommand.DEATHLINK)
-        await self._send_death_link(BotDeathSource.DEATHLINK)
+        await self._send_death_link(DeathLinkSource.BOT_DEATHLINK)
         await send_message(ctx, random.choice(Commands.FAREWELLS))
 
     @commands.command(name="deathpoll", help="Poll if death link should trigger after a timeout", ignore_extra=False)
@@ -712,9 +712,9 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
         self._ensure_cooldown(ExtraCommand.DEATHPOLL)
         self._death_poll_manager.create_death_poll(
-            ctx, timeout, lambda: self._send_death_link(BotDeathSource.DEATHPOLL)
+            ctx, timeout, lambda: self._send_death_link(DeathLinkSource.BOT_DEATHPOLL)
         )
 
-    async def _send_death_link(self, bot_source: BotDeathSource) -> None:
+    async def _send_death_link(self, bot_source: DeathLinkSource) -> None:
         self_name = self._room_manager.active_room.slot
         await self.socket.send_message(get_death_link_message(self_name, bot_source))
