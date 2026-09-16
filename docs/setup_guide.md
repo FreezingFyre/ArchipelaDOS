@@ -96,7 +96,7 @@ A fun feature of the bot is the ability to set custom death link messages. If yo
 
 ## Running the bot
 
-Note that, in order for ArchipelaDOS to communicate with your Archipelago multiworld, it needs to do so through a slot. If you generate your multiworld with the `ArchipelaDOS.yaml` provided in the realease, it will add its own slot that you do not need to configure. Otherwise, you will need to choose a different (password-less) slot to specify at time of connection.
+Note that, in order for ArchipelaDOS to communicate with your Archipelago multiworld, it needs to do so through a slot. If you generate your multiworld with the `ArchipelaDOS.yaml` provided in the realease, it will add its own slot that you do not need to configure. Otherwise, you will need to choose a different slot to specify at time of connection.
 
 Once your bot environment is set up, and you've configured it appropriately in `config.yaml`, you can actually run ArchipelaDOS. If using Docker, it's as simple as starting the Docker container as one would typically. If running manually, you can:
 
