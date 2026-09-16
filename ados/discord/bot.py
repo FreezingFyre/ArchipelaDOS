@@ -16,7 +16,8 @@ from discord.ext.commands.errors import (
 from ados.common import ADOSError
 from ados.config import ADOSConfig
 from ados.discord.commands import Commands
-from ados.discord.common import BotContext, send_failure
+from ados.discord.common import BotContext, EmojiType, send_failure
+from ados.discord.deathpoll import DeathPollManager
 from ados.discord.help import HelpCommand
 from ados.room import ActiveRoomManager
 
@@ -43,9 +44,10 @@ class ADOSBot(commands.Bot):
         self._command_channel_ids: set[int] = set()
 
         self._room_manager = ActiveRoomManager(config, self)
+        self._death_poll_manager = DeathPollManager()
         atexit.register(self._on_program_exit)
 
-        bot_commands = Commands(config, self._room_manager)
+        bot_commands = Commands(config, self._room_manager, self._death_poll_manager)
         self.add_cog(bot_commands)
 
     async def execute(self) -> None:
@@ -81,6 +83,21 @@ class ADOSBot(commands.Bot):
                 command_channels,
                 self._config.discord_server,
             )
+
+        # Guild emojis are only populated after the bot has connected, so custom emojis for death poll
+        # commands need to be set now.
+        def _resolve_emoji(value: Optional[str]) -> Optional[EmojiType]:
+            if value is None:
+                return value
+            for emoji in self.emojis:
+                if emoji.name == value:
+                    return emoji
+            return value
+
+        self._death_poll_manager.override_emojis(
+            _resolve_emoji(self._config.deathpoll_yes_emoji_override),
+            _resolve_emoji(self._config.deathpoll_no_emoji_override),
+        )
 
         self._room_manager.start_broadcasting(self._guild)
 

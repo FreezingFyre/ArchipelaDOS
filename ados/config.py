@@ -62,7 +62,17 @@ class ADOSConfig(BaseModel):
         dict[ExtraCommand, timedelta],
         BeforeValidator(lambda data: {command: parse_time_delta(cooldown) for command, cooldown in data.items()}),
     ]
-    default_deathpoll_timeout: Annotated[timedelta, BeforeValidator(parse_time_delta)]
+
+    deathpoll_timeout_default: Annotated[timedelta, BeforeValidator(parse_time_delta)]
+    deathpoll_timeout_minimum: Annotated[
+        Optional[timedelta], BeforeValidator(lambda d: parse_time_delta(d) if d is not None else None)
+    ]
+    deathpoll_timeout_maximum: Annotated[
+        Optional[timedelta], BeforeValidator(lambda d: parse_time_delta(d) if d is not None else None)
+    ]
+
+    deathpoll_yes_emoji_override: Optional[str]
+    deathpoll_no_emoji_override: Optional[str]
 
     data_path: Annotated[str, BeforeValidator(_expand_path)]
     death_link_messages_path: Annotated[Optional[str], BeforeValidator(_expand_path)]
@@ -105,13 +115,14 @@ class ADOSConfig(BaseModel):
             raise ValueError("at least one broadcast channel must be configured to receive 'admin_alerts'")
         return self
 
-    # Validate that the default death poll timeout is at least 30 seconds, so people have
-    # time to react to it.
+    # Validate that the default death poll timeout is between the minimum and maximum, if set.
     @model_validator(mode="after")
     def _validate_deathpoll_timeout(self) -> Self:
         if ExtraCommand.DEATHPOLL in self.extra_commands_enabled:
-            if self.default_deathpoll_timeout < timedelta(seconds=30):
-                raise ValueError("default deathpoll timeout must be at least 30 seconds")
+            if self.deathpoll_timeout_default < (self.deathpoll_timeout_minimum or timedelta.min):
+                raise ValueError("default deathpoll timeout must be greater than the minimum")
+            if self.deathpoll_timeout_default > (self.deathpoll_timeout_maximum or timedelta.max):
+                raise ValueError("default deathpoll timeout must be less than the maximum")
         return self
 
 

@@ -45,9 +45,9 @@ discord_broadcast_channels: {}
 discord_mention_channel_blacklist: []
 
 
-##################
-# EXTRA COMMANDS #
-##################
+###################
+# COMMAND DETAILS #
+###################
 
 # List of extra commands to enable. These commands may not be suitable for all users/servers, as
 # they can be easily abused. These are the extra commands that can be enabled:
@@ -68,9 +68,17 @@ extra_commands_enabled: []
 # }
 extra_command_cooldowns: {}
 
-# Default timeout of the "deathpoll" command, assuming it is enabled. This should be a time expressed
-# as a string with h/m/s units. For example: "5m" or "1m30s".
-default_deathpoll_timeout: 3m
+# Default, minimum, and maximum timeouts for the "deathpoll" command, assuming it's enabled. The default
+# is necessary, but the min/max can be set to null if no such bounds are desired. If specified, these
+# should be times expressed as strings with h/m/s units. For example: "5m" or "1m30s".
+deathpoll_timeout_default: 3m
+deathpoll_timeout_minimum: 30s
+deathpoll_timeout_maximum: null
+
+# Overrides for the emojis used in death polls. If specified, these should be literal emojis or names
+# of guild emojis.
+deathpoll_yes_emoji_override: null
+deathpoll_no_emoji_override: null
 
 
 #########################

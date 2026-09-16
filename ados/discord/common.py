@@ -1,10 +1,12 @@
 from typing import Any
 
 import discord
+from discord.emoji import AppEmoji, GuildEmoji
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
 type BotContext = Context[commands.Bot]
+type EmojiType = AppEmoji | GuildEmoji | str
 
 THREAD_NAME = "ArchipelaDOS"
 MAX_MESSAGE_SIZE = 2000
