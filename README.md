@@ -18,3 +18,25 @@ This project was heavily inspired by [bridgeipelago](https://github.com/Quasky/b
 - [**Setup Guide**](docs/setup_guide.md)
 - [**Discord Commands**](docs/discord_commands.md)
 - [**Broadcasting**](docs/broadcasting.md)
+
+### Gallery
+
+<p align="center">
+    <b>Broadcasting</b><br>
+    <img src="assets/example_broadcasting.png" width="660"/>
+</p>
+
+<p align="center">
+    <b>User commands</b><br>
+    <img src="assets/example_replaying.png" width="660"/>
+    <img src="assets/example_subscribing.png" width="660"/>
+    <img src="assets/example_hinting.png" width="660"/>
+    <img src="assets/example_deathpoll.png" width="660"/>
+    <img src="assets/example_searching.png" width="660"/>
+</p>
+
+<p align="center">
+    <b>Statistics</b><br>
+    <img src="assets/example_stats_checks.png" width="660"/>
+    <img src="assets/example_stats_items.png" width="660"/>
+</p>
