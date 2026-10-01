@@ -19,6 +19,7 @@ from ados.arch.messages import (
     JoinLeaveType,
     RoomUpdateMessage,
     SlotReleaseMessage,
+    StatusMessage,
 )
 from ados.arch.socket import SocketClient
 from ados.common import (
@@ -91,6 +92,7 @@ class RoomState(Persisted[RoomStateData]):
 
         self._slots: dict[int, SlotInfo] = {}
         self._slot_ids_by_name: dict[str, int] = {}
+        self._valid_slots: list[SlotInfo] = []
 
         self._game_items: dict[str, dict[int, ItemInfo]] = {}
         self._game_item_ids_by_name: dict[str, dict[str, int]] = {}
@@ -111,6 +113,7 @@ class RoomState(Persisted[RoomStateData]):
         socket.add_message_handler(ConnectedMessage, self._handle_slot_update)
         socket.add_message_handler(RoomUpdateMessage, self._handle_slot_update)
         socket.add_message_handler(DataPackageMessage, self._handle_data_package)
+        socket.add_message_handler(StatusMessage, self._handle_status_check)
         socket.add_message_handler(FetchedGroupsMessage, self._handle_fetched_groups)
         socket.add_message_handler(ItemSendMessage, self._handle_item_send)
         socket.add_message_handler(DeathLinkMessage, self._handle_death_link)
@@ -148,6 +151,12 @@ class RoomState(Persisted[RoomStateData]):
             self._game_locations[game] = {location.id: location for location in locations}
             self._game_location_ids_by_name[game] = {normalize(location.name): location.id for location in locations}
         _log.info("Populated packaged data for %d games", len(message.game_items))
+
+    # The set of "valid" slots (those with checks available, not including the bot or other such games) is
+    # different from the set of all slots. The status response lists only valid slots, for use elsewhere.
+    def _handle_status_check(self, message: StatusMessage) -> None:
+        self._valid_slots = [self.resolve_slot(slot_name) for slot_name in message.statuses]
+        print(self._valid_slots)
 
     # The FetchedGroupsMessage is sent once on startup, to populate item and location group mappings
     # for each game.
@@ -473,14 +482,13 @@ class RoomState(Persisted[RoomStateData]):
     def slot_playtime_data(self) -> dict[SlotInfo, SlotPlaytimeData]:
         data: dict[SlotInfo, SlotPlaytimeData] = {}
         now_timestamp = datetime.now().timestamp()
-        slot_ids = set(self._state.slot_sessions.keys()).union(self._state.slot_playtime.keys())
-        for slot_id in slot_ids:
-            sessions = self._state.slot_sessions.get(slot_id, 0)
-            playtime = self._state.slot_playtime.get(slot_id, 0)
-            join_timestamp = self._slot_join_timestamp.get(slot_id)
+        for slot in self._valid_slots:
+            sessions = self._state.slot_sessions.get(slot.id, 0)
+            playtime = self._state.slot_playtime.get(slot.id, 0)
+            join_timestamp = self._slot_join_timestamp.get(slot.id)
             if join_timestamp is not None:
                 playtime += now_timestamp - join_timestamp
-            data[self._slots[slot_id]] = SlotPlaytimeData(sessions, playtime)
+            data[slot] = SlotPlaytimeData(sessions, playtime)
         return data
 
     def slot_death_counts(self) -> dict[SlotInfo, int]:
@@ -489,15 +497,18 @@ class RoomState(Persisted[RoomStateData]):
     def slot_checks_statuses(self) -> dict[SlotInfo, SlotChecksStatus]:
         return {
             slot: SlotChecksStatus(
-                self_freed=self._state.slot_self_freed.get(slot_id, 0),
-                other_freed=self._state.slot_other_freed.get(slot_id, 0),
-                has_released=(slot_id in self._state.slots_finished),
+                self_freed=self._state.slot_self_freed.get(slot.id, 0),
+                other_freed=self._state.slot_other_freed.get(slot.id, 0),
+                has_released=(slot.id in self._state.slots_finished),
             )
-            for slot_id, slot in self._slots.items()
+            for slot in self._valid_slots
         }
 
     def slot_item_counts(self) -> dict[SlotInfo, SlotItemCounts]:
-        return {self._slots[slot_id]: counts for slot_id, counts in self._item_counts.items()}
+        return {slot: self._item_counts.get(slot.id, SlotItemCounts()) for slot in self._valid_slots}
 
     def get_finish_state(self, slot_id: int) -> Optional[FinishState]:
         return self._state.slots_finished.get(slot_id, None)
+
+    def all_slots_finished(self) -> bool:
+        return all(slot.id in self._state.slots_finished for slot in self._valid_slots)

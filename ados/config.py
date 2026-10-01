@@ -37,6 +37,8 @@ class BroadcastCategory(str, Enum):
     PLAYER_CHAT = "player_chat"
     SERVER_CHAT = "server_chat"
     GOAL_REACHED = "goal_reached"
+    SLOT_RELEASED = "slot_released"
+    ROOM_COMPLETED = "room_completed"
     ADMIN_ALERTS = "admin_alerts"
 
 

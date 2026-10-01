@@ -171,7 +171,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     class RoomFlags(commands.FlagConverter):
         id_or_url: str = commands.flag(positional=True)
         slot: str = "ArchipelaDOS"  # We don't resolve this with SlotInfoArg since the bot will not be connected yet.
-        game: str = "Archipelago"
         password: Optional[StringArg] = None
 
     @commands.group(name="room", help="Set and interact with the active room", invoke_without_command=True)  # type: ignore[arg-type]
@@ -180,7 +179,7 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @room.command(name="connect", help="Connect to a new Archipelago room via room ID or socket URL", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def room_connect(self, ctx: BotContext, *, flags: RoomFlags) -> None:
-        await self._room_manager.connect(flags.id_or_url, flags.slot, flags.game, cast(Optional[str], flags.password))
+        await self._room_manager.connect(flags.id_or_url, flags.slot, cast(Optional[str], flags.password))
         await send_success(ctx, f"Connected to new room at <{self._room_manager.active_room.location}>")
 
     @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
@@ -642,9 +641,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @commands.command(name="items", help="Outputs data on types of items sent/received per slot", ignore_extra=False)
     async def items(self, ctx: BotContext, *, flags: StatsFlags) -> None:
         item_counts = dict(sorted(self.state.slot_item_counts().items(), key=lambda pair: pair[0].name))
-        if not item_counts:
-            await send_message(ctx, "No items have been sent yet")
-            return
         await self._get_plotter(flags.mode).send_items(ctx, item_counts)
 
     @commands.command(name="deaths", help="Outputs data on death links triggered per slot", ignore_extra=False)
@@ -658,9 +654,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @commands.command(name="playtime", help="Outputs data on playtime per slot", ignore_extra=False)
     async def playtime(self, ctx: BotContext, *, flags: StatsFlags) -> None:
         playtime_data = dict(sorted(self.state.slot_playtime_data().items(), key=lambda pair: pair[0].name))
-        if not playtime_data:
-            await send_message(ctx, "No slots have registered playtime yet")
-            return
         await self._get_plotter(flags.mode).send_playtime(ctx, playtime_data)
 
     def _get_plotter(self, mode: StatsOutputMode) -> type[GraphPlotter] | type[TablePlotter]:

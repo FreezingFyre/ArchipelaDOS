@@ -28,6 +28,8 @@ discord_command_channels: []
 #   - "player_chat": Broadcast when a player sends a chat message.
 #   - "server_chat": Broadcast when the server sends a global chat message.
 #   - "goal_reached": Broadcast when a player reaches their goal.
+#   - "slot_released": Broadcast when a player's remaining items are manually released.
+#   - "room_completed": Broadcast when all players have reached their goal or been manually released.
 #   - "admin_alerts": Broadcast alerts related to bot status, like when it disconnects.
 #
 # Note that at least one channel *must* be configured to broadcast "admin_alerts". Here is an

@@ -14,10 +14,11 @@ from ados.arch.messages import (
     DataPackageMessage,
     RoomInfoMessage,
     ServerMessage,
-    connect_message,
     deserialize,
+    get_connect_message,
     get_data_package_message,
     get_fetch_groups_message,
+    get_status_message,
 )
 from ados.common import ADOSError
 
@@ -33,8 +34,7 @@ MAX_LOG_SIZE = 4096
 # for specific message types.
 class SocketClient:
 
-    def __init__(self, *, slot_name: str, game: str, password: Optional[str]):
-        self._game = game
+    def __init__(self, *, slot_name: str, password: Optional[str]):
         self._slot_name = slot_name
         self._password = password
 
@@ -139,7 +139,7 @@ class SocketClient:
             self._handle_message(data_package)
 
         _log.info("Sending connect message to server at '%s' for slot '%s'", server_url, self._slot_name)
-        await socket.send(connect_message(game=self._game, slot=self._slot_name, password=self._password))
+        await socket.send(get_connect_message(slot=self._slot_name, password=self._password))
 
         connect_response = next(deserialize(await socket.recv()))
         if not isinstance(connect_response, (ConnectedMessage, ConnectionRefusedMessage)):
@@ -154,6 +154,7 @@ class SocketClient:
         # This response is handled separately with normal message dispatch.
         if fetch_data:
             await socket.send(get_fetch_groups_message(room_info.games))
+            await socket.send(get_status_message())
 
         return socket
 

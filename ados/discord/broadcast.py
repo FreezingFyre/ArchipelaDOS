@@ -46,6 +46,8 @@ class BroadcastConfig:
             self.send_player_chat = False
             self.send_server_chat = False
             self.send_goal_reached = False
+            self.send_slot_released = False
+            self.send_room_completed = False
             self.send_admin_alerts = False
         else:
             self.item_filter = ItemCategoryFilter.ALL
@@ -55,6 +57,8 @@ class BroadcastConfig:
             self.send_player_chat = True
             self.send_server_chat = True
             self.send_goal_reached = True
+            self.send_slot_released = True
+            self.send_room_completed = True
             self.send_admin_alerts = True
 
         for category in categories:
@@ -76,6 +80,10 @@ class BroadcastConfig:
                 self.send_server_chat = True
             elif category == BroadcastCategory.GOAL_REACHED:
                 self.send_goal_reached = True
+            elif category == BroadcastCategory.SLOT_RELEASED:
+                self.send_slot_released = True
+            elif category == BroadcastCategory.ROOM_COMPLETED:
+                self.send_room_completed = True
             elif category == BroadcastCategory.ADMIN_ALERTS:
                 self.send_admin_alerts = True
 
@@ -292,9 +300,10 @@ class MessageBroadcaster:
 
         _log.info("Handling goal reached for '%s'", slot)
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
+        self._check_room_complete()
 
     def _handle_slot_release(self, message: SlotReleaseMessage) -> None:
-        if not (channel_names := self._filter_channels(lambda config: config.send_goal_reached)):
+        if not (channel_names := self._filter_channels(lambda config: config.send_slot_released)):
             return
         if self._state.get_finish_state(message.slot_id) == FinishState.GOAL:
             return
@@ -303,6 +312,18 @@ class MessageBroadcaster:
         content = f":broken_chain: {highlight(slot)} has released their remaining items"
 
         _log.info("Handling items released for '%s'", slot)
+        self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
+        self._check_room_complete()
+
+    def _check_room_complete(self) -> None:
+        if not self._state.all_slots_finished():
+            return
+        if not (channel_names := self._filter_channels(lambda config: config.send_room_completed)):
+            return
+
+        content = ":100: All players have completed their games!"
+
+        _log.info("Handling room completion")
         self._broadcast_queue.put_nowait(BroadcastItem(channel_names, content))
 
     def _filter_channels(self, predicate: Callable[[BroadcastConfig], bool]) -> list[str]:
