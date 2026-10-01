@@ -156,7 +156,6 @@ class RoomState(Persisted[RoomStateData]):
     # different from the set of all slots. The status response lists only valid slots, for use elsewhere.
     def _handle_status_check(self, message: StatusMessage) -> None:
         self._valid_slots = [self.resolve_slot(slot_name) for slot_name in message.statuses]
-        print(self._valid_slots)
 
     # The FetchedGroupsMessage is sent once on startup, to populate item and location group mappings
     # for each game.

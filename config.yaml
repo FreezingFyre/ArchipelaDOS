@@ -46,6 +46,28 @@ discord_broadcast_channels: {}
 # given as channel names. Useful if item send notifications are being broadcast to multiple channels.
 discord_mention_channel_blacklist: []
 
+# Restrictions on which Discord role(s) certain commands can be used by. These must be given as a
+# mapping from command names to a list of which roles the command can be used by. Here is an example
+# for this configuration that limits "room connect" and "room finalize" commands to use by users
+# with the "Mod" role:
+#
+# discord_command_role_restrictions: {
+#     "room connect": ["Mod"],
+#     "room finalize": ["Mod"]
+# }
+discord_command_role_restrictions: {}
+
+# Restrictions on which Discord channel(s) certain commands can be used in. These must be given as
+# a mapping from command names to a list of which channels the command can be used in. These channels
+# must be a subset of the general command channels. Here is an example for this configuration that
+# limits "deathlink" and "deathpoll" commands to use in the "primary" Discord channel:
+#
+# discord_command_channel_restrictions: {
+#     "deathlink": ["primary"],
+#     "deathpoll": ["primary"]
+# }
+discord_command_channel_restrictions: {}
+
 
 ###################
 # COMMAND DETAILS #

@@ -58,6 +58,8 @@ class ADOSConfig(BaseModel):
     discord_command_channels: set[str]
     discord_broadcast_channels: dict[str, set[BroadcastCategory]]
     discord_mention_channel_blacklist: set[str]
+    discord_command_role_restrictions: dict[str, set[str]]
+    discord_command_channel_restrictions: dict[str, set[str]]
 
     extra_commands_enabled: set[ExtraCommand]
     extra_command_cooldowns: Annotated[
