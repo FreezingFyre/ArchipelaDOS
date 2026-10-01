@@ -29,6 +29,8 @@ The following categories can be used to control what is broadcast to each channe
 | `player_chat`       | Messages sent by players in the Archipelago chat |
 | `server_chat`       | Messages sent by the Archipelago server |
 | `goal_reached`      | Notifications when a player reaches their goal |
+| `slot_released`     | Notifications when a player's remaining items are manually released |
+| `room_completed`    | Notification when all players have reached their goal or been manually released |
 | `admin_alerts`      | Alerts related to bot status, like when it disconnects unexpectedly |
 
 Only one of `progression_items`, `useful_items`, or `all_items` may be specified per channel. These are hierarchical filters; `useful_items` includes progression items, and `all_items` includes both.

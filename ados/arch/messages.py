@@ -48,13 +48,13 @@ def _slot_from_data(player: dict[str, Any], slots_info: dict[str, Any]) -> SlotI
 
 
 # Sent to the server to initiate a connection after receiving the RoomInfo message.
-def connect_message(*, game: str, slot: str, password: Optional[str]) -> str:
+def get_connect_message(*, slot: str, password: Optional[str]) -> str:
     return json.dumps(
         [
             {
                 "cmd": "Connect",
                 "password": password,
-                "game": game,
+                "game": "",
                 "name": slot,
                 "uuid": "ArchipelaDOS",
                 "version": {"major": ARCH_MAJOR, "minor": ARCH_MINOR, "build": ARCH_BUILD, "class": "Version"},

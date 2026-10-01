@@ -35,7 +35,6 @@ HOSTED_INACTIVITY_THRESHOLD = timedelta(hours=24)
 class RoomData(BaseModel):
     location: str
     slot: str
-    game: str
     password: Optional[str]
     data_path: str
 
@@ -58,7 +57,7 @@ class RoomWrapper:
         self._location = room_data.location
         self._password = room_data.password
         self._web = WebClient(self._location) if HOSTED_BASE_URL in self._location else None
-        self._socket = SocketClient(slot_name=room_data.slot, game=room_data.game, password=room_data.password)
+        self._socket = SocketClient(slot_name=room_data.slot, password=room_data.password)
         self._state = RoomState(room_data.data_path, self._socket)
         self._broadcaster = MessageBroadcaster(config, self._socket, self._state, client)
 
@@ -133,7 +132,7 @@ class RoomWrapper:
             socket = self._slot_sockets[slot][1]
         else:
             _log.info("Creating new socket for slot '%s'", slot)
-            socket = SocketClient(slot_name=slot.name, game=slot.game, password=self._password)
+            socket = SocketClient(slot_name=slot.name, password=self._password)
             socket.add_message_handler(ConnectionClosedMessage, lambda _: self._slot_sockets.pop(slot, None))
             await socket.connect(self._web.server_url if self._web is not None else self._location, fetch_data=False)
         self._slot_sockets[slot] = (datetime.now(), socket)
@@ -235,7 +234,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
                 f" or `{self._config.discord_command_prefix}room finalize` to disconnect from that room"
             )
 
-    async def connect(self, location: str, slot: str, game: str, password: Optional[str]) -> None:
+    async def connect(self, location: str, slot: str, password: Optional[str]) -> None:
         if self._room is not None:
             raise ADOSError("Cannot connect to a new room until the current room is finalized")
 
@@ -250,7 +249,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
 
         data_path = os.path.join(self._config.data_path, datetime.now().strftime("%Y%m%d_%H%M%S"))
         os.makedirs(data_path, exist_ok=True)
-        new_room_data = RoomData(location=location, slot=slot, game=game, password=password, data_path=data_path)
+        new_room_data = RoomData(location=location, slot=slot, password=password, data_path=data_path)
         new_room = RoomWrapper(self._config, self._client, new_room_data)
 
         _log.info("Connecting to new room at '%s'", location)
