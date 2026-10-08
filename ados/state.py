@@ -136,7 +136,7 @@ class RoomState(Persisted[RoomStateData]):
     # will only affect aliases, so all IDs remain valid.
     def _handle_slot_update(self, message: ConnectedMessage | RoomUpdateMessage) -> None:
         slots = list(message.slots)
-        if not (slot.name == "ArchipelaDOS" for slot in slots):
+        if not any(slot.name == "ArchipelaDOS" for slot in slots):
             slots.append(SlotInfo(id=-1, name="ArchipelaDOS", alias="ArchipelaDOS", game="Archipelago"))
         self._slots = {slot.id: slot for slot in slots}
         self._slot_ids_by_name = {normalize(slot.name): slot.id for slot in slots}
