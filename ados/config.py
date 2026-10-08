@@ -1,3 +1,4 @@
+import itertools
 import os
 from datetime import timedelta
 from enum import Enum
@@ -127,6 +128,14 @@ class ADOSConfig(BaseModel):
                 raise ValueError("default deathpoll timeout must be greater than the minimum")
             if self.deathpoll_timeout_default > (self.deathpoll_timeout_maximum or timedelta.max):
                 raise ValueError("default deathpoll timeout must be less than the maximum")
+        return self
+
+    # Validate that channels in restrictions are a subset of the command channels, if set.
+    @model_validator(mode="after")
+    def _validate_channel_restrictions(self) -> Self:
+        restricted_channels = set(itertools.chain(*self.discord_command_channel_restrictions.values()))
+        if restricted_channels.difference(self.discord_command_channels):
+            raise ValueError("channels for restrictions must be a subset of all command channels")
         return self
 
 

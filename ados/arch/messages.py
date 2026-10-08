@@ -21,7 +21,7 @@ from ados.common import (
 
 _log = logging.getLogger(__name__)
 
-ARCH_VERSION = "0.6.7"
+ARCH_VERSION = "0.6.8"
 ARCH_MAJOR, ARCH_MINOR, ARCH_BUILD = [int(part) for part in ARCH_VERSION.split(".")]
 
 
@@ -213,7 +213,7 @@ class ItemSendMessage:
 class DeathLinkMessage:
     def __init__(self, data: dict[str, Any]) -> None:
         source = data["data"].get("ados")
-        self.slot_name: str = data["data"]["source"]
+        self.slot_name: str = data["data"]["source"] if source is None else "ArchipelaDOS"
         try:
             self.source = DeathLinkSource(source) if source is not None else DeathLinkSource.OTHER
         except Exception:
@@ -380,6 +380,7 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 and message.get("type") in {"Join", "Part"}
                 and " viewing " not in message.get("data", [{}])[0].get("text", "")
                 and " tracking " not in message.get("data", [{}])[0].get("text", "")
+                and "'SlowRelease'" not in message.get("data", [{}])[0].get("text", "")
             ):
                 yield JoinLeaveMessage(message)
             elif cmd == "PrintJSON" and message.get("type") == "Chat" and not message["message"].startswith("!"):

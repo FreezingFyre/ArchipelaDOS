@@ -172,8 +172,11 @@ class RoomWrapper:
     # If the socket disconnects, we want to refresh the room and attempt a reconnect before
     # erroring out, assuming the room has been used recently.
     def _on_socket_disconnected(self, message: ConnectionClosedMessage) -> None:
+
+        self._state.flush_playtime()
         if message.intended:
             return
+
         if datetime.now() - self._last_used > self._inactivity_threshold:
             self._broadcaster.admin_alert(
                 "Lost connection to Archipelago server after inactivity timeout"
