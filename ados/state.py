@@ -135,10 +135,13 @@ class RoomState(Persisted[RoomStateData]):
     # The list of slots can change on either a ConnectedMessage or a RoomUpdateMessage. This
     # will only affect aliases, so all IDs remain valid.
     def _handle_slot_update(self, message: ConnectedMessage | RoomUpdateMessage) -> None:
-        self._slots = {slot.id: slot for slot in message.slots}
-        self._slot_ids_by_name = {normalize(slot.name): slot.id for slot in message.slots}
-        self._slot_ids_by_name.update({normalize(slot.alias): slot.id for slot in message.slots})
-        self._slot_ids_by_name.update({normalize(str(slot)): slot.id for slot in message.slots})
+        slots = list(message.slots)
+        if not (slot.name == "ArchipelaDOS" for slot in slots):
+            slots.append(SlotInfo(id=-1, name="ArchipelaDOS", alias="ArchipelaDOS", game="Archipelago"))
+        self._slots = {slot.id: slot for slot in slots}
+        self._slot_ids_by_name = {normalize(slot.name): slot.id for slot in slots}
+        self._slot_ids_by_name.update({normalize(slot.alias): slot.id for slot in slots})
+        self._slot_ids_by_name.update({normalize(str(slot)): slot.id for slot in slots})
         _log.info("Populated slot information for %d slots", len(message.slots))
 
     # The DataPackageMessage is sent once on startup, to populate item and location mappings
@@ -296,7 +299,7 @@ class RoomState(Persisted[RoomStateData]):
     ################################################
 
     def all_slots(self) -> list[SlotInfo]:
-        return list(self._slots.values())
+        return [slot for slot in self._slots.values() if slot.id > 0]
 
     def all_item_groups(self, game: str) -> set[str]:
         return self._game_item_groups.get(game, set())

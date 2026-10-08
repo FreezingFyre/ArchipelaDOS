@@ -185,7 +185,6 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
     @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]
     async def room_finalize(self, ctx: BotContext) -> None:
         location = self._room_manager.active_room.location
-        self.state.flush_playtime()
         self._death_poll_manager.cancel_all()
         await self._room_manager.disconnect()
         await send_success(ctx, f"Disconnected from room at <{location}>")
