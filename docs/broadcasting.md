@@ -6,12 +6,14 @@ The bot can broadcast messages from the Archipelago multiworld into one or more 
 
 ## Configuration
 
-Broadcast channels are configured via the `discord_broadcast_channels` field in `config.yaml`. Each entry maps a Discord channel to a list of broadcast categories. As an example:
+Broadcast channels are configured via the `discord_broadcast_channels` field in `config.yaml`. Each entry maps a Discord channel or thread to a list of broadcast categories. Channels in this mapping can be specified by name or ID. Threads can be specified by the channel/thread names separated by `@`, or by ID as well. Additionally, broadcasts can be configured to whatever channel `!room connect` was called from by using `CONNECT_CHANNEL` in place of a channel name. As an example:
 
 ```yaml
-discord_broadcast_channels:
-    archipelago-full: ["everything"]
-    archipelago-important: ["progression_items", "death_links", "goal_reached"]
+discord_broadcast_channels: {
+    archipelago-full: ["everything"],
+    archipelago-important: ["progression_items", "death_links", "goal_reached"],
+    CONNECT_CHANNEL: ["trap_items"]
+}
 ```
 
 ## Broadcast categories

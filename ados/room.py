@@ -36,6 +36,7 @@ class RoomData(BaseModel):
     location: str
     slot: str
     password: Optional[str]
+    connect_id: Optional[int]
     data_path: str
 
 
@@ -220,6 +221,12 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
         self._room.mark_used()
         return self._room
 
+    @property
+    def active_room_connect_id(self) -> Optional[int]:
+        if self._state.active_room is None:
+            return None
+        return self._state.active_room.connect_id
+
     # Always called after construction to allow one-time async setup. If there was a saved
     # active room, it is initialized as well.
     async def initialize(self) -> None:
@@ -237,7 +244,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
                 f" or `{self._config.discord_command_prefix}room finalize` to disconnect from that room"
             )
 
-    async def connect(self, location: str, slot: str, password: Optional[str]) -> None:
+    async def connect(self, location: str, slot: str, password: Optional[str], connect_id: Optional[int]) -> None:
         if self._room is not None:
             raise ADOSError("Cannot connect to a new room until the current room is finalized")
 
@@ -252,7 +259,9 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
 
         data_path = os.path.join(self._config.data_path, datetime.now().strftime("%Y%m%d_%H%M%S"))
         os.makedirs(data_path, exist_ok=True)
-        new_room_data = RoomData(location=location, slot=slot, password=password, data_path=data_path)
+        new_room_data = RoomData(
+            location=location, slot=slot, password=password, connect_id=connect_id, data_path=data_path
+        )
         new_room = RoomWrapper(self._config, self._client, new_room_data)
 
         _log.info("Connecting to new room at '%s'", location)
@@ -269,7 +278,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
         # Broadcasting can be enabled/disabled orthogonally to the room being connected/disconnected.
         # Start the broadcaster if appropriate.
         if self._broadcast_guild is not None:
-            new_room.broadcaster.start(self._broadcast_guild)
+            new_room.broadcaster.start(self._broadcast_guild, connect_id)
 
         # Only make the room active if all else has succeeded.
         self._update_room(new_room, new_room_data)
@@ -283,7 +292,7 @@ class ActiveRoomManager(Persisted[ActiveRoomData]):
     def start_broadcasting(self, guild: discord.Guild) -> None:
         self._broadcast_guild = guild
         if self._room is not None:
-            self._room.broadcaster.start(guild)
+            self._room.broadcaster.start(guild, self.active_room_connect_id)
 
     def stop_broadcasting(self) -> None:
         self._broadcast_guild = None

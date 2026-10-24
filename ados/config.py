@@ -16,6 +16,8 @@ from pydantic import (
 
 from ados.common import parse_time_delta
 
+type ChannelIdentifier = str | int | None
+
 
 def _transform_logging_level(value: Any) -> int:
     try:
@@ -26,6 +28,17 @@ def _transform_logging_level(value: Any) -> int:
 
 def _expand_path(value: Optional[str]) -> Optional[str]:
     return os.path.abspath(value) if value is not None else None
+
+
+def _transform_channel(value: str | int) -> ChannelIdentifier:
+    if value == "CONNECT_CHANNEL":
+        return None
+    if isinstance(value, int) or value.isnumeric():
+        return int(value)
+    return value
+
+
+ChannelIdentifierType = Annotated[ChannelIdentifier, BeforeValidator(_transform_channel)]
 
 
 class BroadcastCategory(str, Enum):
@@ -57,11 +70,11 @@ class ADOSConfig(BaseModel):
     discord_token: str = Field(..., exclude=True, repr=False)
     discord_server: str
     discord_command_prefix: str
-    discord_command_channels: set[str]
-    discord_broadcast_channels: dict[str, set[BroadcastCategory]]
-    discord_mention_channel_blacklist: set[str]
+    discord_command_channels: set[ChannelIdentifierType]
+    discord_broadcast_channels: dict[ChannelIdentifierType, set[BroadcastCategory]]
+    discord_mention_channel_blacklist: set[ChannelIdentifierType]
     discord_command_role_whitelist: dict[str, set[str]]
-    discord_command_channel_whitelist: dict[str, set[str]]
+    discord_command_channel_whitelist: dict[str, set[ChannelIdentifierType]]
 
     extra_commands_enabled: set[ExtraCommand]
     extra_command_cooldowns: Annotated[
@@ -135,12 +148,9 @@ class ADOSConfig(BaseModel):
                 raise ValueError("default deathpoll timeout must be less than the maximum")
         return self
 
-    # Validate that channels in whitelists/blacklists are a subset of the command channels, if set.
+    # Validate that channels in the mention blacklists are a subset of the broadcast channels, if set.
     @model_validator(mode="after")
     def _validate_channel_lists(self) -> Self:
-        whitelist_channels = set(itertools.chain(*self.discord_command_channel_whitelist.values()))
-        if whitelist_channels.difference(self.discord_command_channels):
-            raise ValueError("channels in command whitelists must be a subset of all command channels")
         if self.discord_mention_channel_blacklist.difference(self.discord_broadcast_channels.keys()):
             raise ValueError("channels in mention blacklist must be a subset of all broadcast channels")
         return self
