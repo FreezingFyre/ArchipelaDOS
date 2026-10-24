@@ -111,7 +111,9 @@ class MessageBroadcaster:
     def start(self, guild: discord.Guild, connect_id: Optional[int]) -> None:
         _log.info("Starting message broadcaster in server '%s'", guild.name)
 
-        channel_categories = self._config.discord_broadcast_channels.copy()
+        channel_categories = {
+            identifier: categories.copy() for identifier, categories in self._config.discord_broadcast_channels.items()
+        }
         mention_blacklist = self._config.discord_mention_channel_blacklist.copy()
         if connect_id is not None:
             if None in channel_categories:
