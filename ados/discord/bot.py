@@ -71,8 +71,8 @@ class ADOSBot(commands.Bot):
             return
 
         # Validate that the configured channels and roles exist in the guild.
-        config_roles = set(itertools.chain(*self._config.discord_command_role_restrictions.values()))
-        config_channels = set(itertools.chain(*self._config.discord_command_channel_restrictions.values()))
+        config_roles = set(itertools.chain(*self._config.discord_command_role_whitelist.values()))
+        config_channels = set(itertools.chain(*self._config.discord_command_channel_whitelist.values()))
         config_channels.update(self._config.discord_command_channels)
 
         if missing_roles := config_roles - set(role.name for role in self._guild.roles):
@@ -138,7 +138,7 @@ class ADOSBot(commands.Bot):
         _log.info("Processing user command '%s'", ctx.message.content)
 
         member = ctx.author if isinstance(ctx.author, discord.Member) else self._guild.get_member(ctx.author.id)
-        for command, roles in self._config.discord_command_role_restrictions.items():
+        for command, roles in self._config.discord_command_role_whitelist.items():
             command = f"{self._config.discord_command_prefix}{command}"
             if ctx.message.content.startswith(command):
                 if member is None or not roles.intersection(role.name for role in member.roles):
@@ -146,7 +146,7 @@ class ADOSBot(commands.Bot):
                     await send_failure(ctx, f"You do not have permission to run `{command}`")
                     return
 
-        for command, channels in self._config.discord_command_channel_restrictions.items():
+        for command, channels in self._config.discord_command_channel_whitelist.items():
             command = f"{self._config.discord_command_prefix}{command}"
             if ctx.message.content.startswith(command):
                 if not isinstance(ctx.channel, discord.TextChannel) or ctx.channel.name not in channels:

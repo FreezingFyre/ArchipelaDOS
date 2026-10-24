@@ -41,6 +41,7 @@ class BroadcastCategory(str, Enum):
     SLOT_RELEASED = "slot_released"
     ROOM_COMPLETED = "room_completed"
     ADMIN_ALERTS = "admin_alerts"
+    EVERYTHING = "everything"
 
 
 class ExtraCommand(str, Enum):
@@ -59,8 +60,8 @@ class ADOSConfig(BaseModel):
     discord_command_channels: set[str]
     discord_broadcast_channels: dict[str, set[BroadcastCategory]]
     discord_mention_channel_blacklist: set[str]
-    discord_command_role_restrictions: dict[str, set[str]]
-    discord_command_channel_restrictions: dict[str, set[str]]
+    discord_command_role_whitelist: dict[str, set[str]]
+    discord_command_channel_whitelist: dict[str, set[str]]
 
     extra_commands_enabled: set[ExtraCommand]
     extra_command_cooldowns: Annotated[
@@ -100,7 +101,7 @@ class ADOSConfig(BaseModel):
         return self
 
     # Validate that the broadcast channel configs are valid (only one item category filter
-    # is set per channel).
+    # is set per channel, at least one admin alert channel, etc).
     @model_validator(mode="after")
     def _validate_channels(self) -> Self:
         item_categories = {
@@ -109,12 +110,16 @@ class ADOSConfig(BaseModel):
             BroadcastCategory.ALL_ITEMS,
         }
         for categories in self.discord_broadcast_channels.values():
+            if len(categories) == 0:
+                raise ValueError("broadcast channel config cannot be empty; use 'everything' for all messages")
+            if BroadcastCategory.EVERYTHING in categories and len(categories) > 1:
+                raise ValueError("broadcast channel config with 'everything' cannot contain other types")
             if len(item_categories.intersection(categories)) > 1:
                 raise ValueError(
                     f"broadcast channel config cannot contain multiple of {[category.value for category in item_categories]}"
                 )
         for categories in self.discord_broadcast_channels.values():
-            if not categories or BroadcastCategory.ADMIN_ALERTS in categories:
+            if categories.intersection({BroadcastCategory.ADMIN_ALERTS, BroadcastCategory.EVERYTHING}):
                 break
         else:
             raise ValueError("at least one broadcast channel must be configured to receive 'admin_alerts'")
@@ -130,16 +135,18 @@ class ADOSConfig(BaseModel):
                 raise ValueError("default deathpoll timeout must be less than the maximum")
         return self
 
-    # Validate that channels in restrictions are a subset of the command channels, if set.
+    # Validate that channels in whitelists/blacklists are a subset of the command channels, if set.
     @model_validator(mode="after")
-    def _validate_channel_restrictions(self) -> Self:
-        restricted_channels = set(itertools.chain(*self.discord_command_channel_restrictions.values()))
-        if restricted_channels.difference(self.discord_command_channels):
-            raise ValueError("channels for restrictions must be a subset of all command channels")
+    def _validate_channel_lists(self) -> Self:
+        whitelist_channels = set(itertools.chain(*self.discord_command_channel_whitelist.values()))
+        if whitelist_channels.difference(self.discord_command_channels):
+            raise ValueError("channels in command whitelists must be a subset of all command channels")
+        if self.discord_mention_channel_blacklist.difference(self.discord_broadcast_channels.keys()):
+            raise ValueError("channels in mention blacklist must be a subset of all broadcast channels")
         return self
 
 
 def load_config(path: str) -> ADOSConfig:
-    with open(path, "r") as config_file:
+    with open(path, mode="r", encoding="utf-8") as config_file:
         data = yaml.safe_load(config_file)
     return ADOSConfig(**data)

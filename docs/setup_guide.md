@@ -79,15 +79,15 @@ The following configurations are *essential* to set:
 - `discord_server`: The name of the server in which ArchipelaDOS should operate
 - `discord_command_channels`: A list of channels in which ArchipelaDOS should listen for, and repond to, user commands
 - `discord_broadcast_channels`: A dictionary of which message types to broadcast to which Discord channels; these channels can overlap with those in `discord_command_channels`
-    - The simplest configuration here is to broadcast all messages to a single channel; an empty list indicates you want all messages to be broadcast:
+    - The simplest configuration here is to broadcast all messages to a single channel; use `everything` to indicate that you want all messages to be broadcast:
         ```yaml
-        discord_broadcast_channels: { "my_channel": [] }
+        discord_broadcast_channels: { "my-channel": ["everything"] }
         ```
     - If you want to broadcast death link messages to one channel, and item/join/leave messages to another, you could do:
         ```yaml
         discord_broadcast_channels: {
-            "channel_1": ["death_links"],
-            "channel_2": ["all_items", "join_leave"]
+            "channel-1": ["death_links"],
+            "channel-2": ["all_items", "join_leave"]
         }
         ```
     - Note that `progression_items`, `useful_items`, and `all_items` are different filter levels for item send messages, and are mutually exclusive. Traps will only be broadcast if `trap_items` are configured.
@@ -115,6 +115,6 @@ Once the bot is running, use the `!room connect` command in Discord to connect t
 - `!room connect N1J-OYhZRO-FBFcY-bMdea`
 - `!room connect https://archipelago.gg/room/N1J-OYhZRO-FBFcY-bMdea`
 - `!room connect wss://myownserver.net:54545`
-- `!room connect N1J-OYhZRO-FBFcY-bMdea slot: MySlot game: OtherGame`
+- `!room connect N1J-OYhZRO-FBFcY-bMdea slot: MySlot password: SecReT`
 
 Once the bot has been connected to a room, that active connection and data related to it will persist even if the bot is restarted. The active room is only disconnected after using the Discord command `!room finalize`, after which a new room can be connected.

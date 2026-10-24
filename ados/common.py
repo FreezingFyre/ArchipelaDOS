@@ -253,7 +253,7 @@ class Persisted[T: BaseModel]:
             return self._state_type()
 
         try:
-            with open(self._state_file, "r") as data_file:
+            with open(self._state_file, mode="r", encoding="utf-8") as data_file:
                 _log.info("Loading state file '%s' for %s", self._state_file, self._state_type.__name__)
                 return self._state_type(**json.load(data_file))
         except Exception as ex:
@@ -267,7 +267,7 @@ class Persisted[T: BaseModel]:
             return self._state_type()
 
     def _save_state(self) -> None:
-        with open(self._state_file, "w") as data_file:
+        with open(self._state_file, mode="w", encoding="utf-8") as data_file:
             data_file.write(self._state.model_dump_json(indent=4))
 
     @staticmethod

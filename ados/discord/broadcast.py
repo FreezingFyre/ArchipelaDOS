@@ -38,28 +38,19 @@ class BroadcastItem(NamedTuple):
 # Configuration for which types of broadcasts to send to a particular channel.
 class BroadcastConfig:
     def __init__(self, categories: set[BroadcastCategory]) -> None:
-        if categories:
-            self.item_filter = ItemCategoryFilter.NONE
-            self.send_traps = False
-            self.send_death_links = False
-            self.send_join_leave = False
-            self.send_player_chat = False
-            self.send_server_chat = False
-            self.send_goal_reached = False
-            self.send_slot_released = False
-            self.send_room_completed = False
-            self.send_admin_alerts = False
-        else:
-            self.item_filter = ItemCategoryFilter.ALL
-            self.send_traps = True
-            self.send_death_links = True
-            self.send_join_leave = True
-            self.send_player_chat = True
-            self.send_server_chat = True
-            self.send_goal_reached = True
-            self.send_slot_released = True
-            self.send_room_completed = True
-            self.send_admin_alerts = True
+
+        everything = BroadcastCategory.EVERYTHING in categories
+
+        self.item_filter = ItemCategoryFilter.ALL if everything else ItemCategoryFilter.NONE
+        self.send_traps = everything
+        self.send_death_links = everything
+        self.send_join_leave = everything
+        self.send_player_chat = everything
+        self.send_server_chat = everything
+        self.send_goal_reached = everything
+        self.send_slot_released = everything
+        self.send_room_completed = everything
+        self.send_admin_alerts = everything
 
         for category in categories:
             if category == BroadcastCategory.PROGRESSION_ITEMS:
@@ -158,7 +149,7 @@ class MessageBroadcaster:
         messages: dict[DeathLinkSource, list[str]] = {source: [] for source in DeathLinkSource}
         bad_messages: list[str] = []
         try:
-            with open(path, "r") as file:
+            with open(path, mode="r", encoding="utf-8") as file:
                 for line in file:
                     line = line.strip()
                     if not line:
