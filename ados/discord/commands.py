@@ -179,7 +179,8 @@ class Commands(commands.Cog):  # pyright: ignore - pylance hates this pattern
 
     @room.command(name="connect", help="Connect to a new Archipelago room via room ID or socket URL", ignore_extra=False, extras={"ord": 1})  # type: ignore[arg-type]
     async def room_connect(self, ctx: BotContext, *, flags: RoomFlags) -> None:
-        await self._room_manager.connect(flags.id_or_url, flags.slot, cast(Optional[str], flags.password))
+        connect_id = ctx.channel.id if isinstance(ctx.channel, (discord.TextChannel, discord.Thread)) else None
+        await self._room_manager.connect(flags.id_or_url, flags.slot, cast(Optional[str], flags.password), connect_id)
         await send_success(ctx, f"Connected to new room at <{self._room_manager.active_room.location}>")
 
     @room.command(name="finalize", help="Disconnect from the current Archipelago room, allowing a new connection", ignore_extra=False, extras={"ord": 2})  # type: ignore[arg-type]

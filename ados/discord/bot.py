@@ -1,7 +1,7 @@
 import atexit
 import itertools
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import discord
 from discord.ext import commands
@@ -15,7 +15,7 @@ from discord.ext.commands.errors import (
 )
 
 from ados.common import ADOSError
-from ados.config import ADOSConfig
+from ados.config import ADOSConfig, ChannelIdentifier
 from ados.discord.commands import Commands
 from ados.discord.common import BotContext, EmojiType, send_failure
 from ados.discord.deathpoll import DeathPollManager
@@ -27,6 +27,27 @@ _log = logging.getLogger(__name__)
 
 # Discord will warn about PyNaCl not being installed if this is not set.
 discord.VoiceClient.warn_nacl = False
+
+
+# Determines whether a given Discord channel/thread matches one given in a configured
+# whitelist set.
+def _channel_matches(
+    channel: Any, whitelist: set[ChannelIdentifier], connect_id: Optional[int], match_parent: bool
+) -> bool:
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        return False
+    if channel.id == connect_id and None in whitelist:
+        return True
+    if channel.id in whitelist:
+        return True
+    if isinstance(channel, discord.TextChannel):
+        return channel.name in whitelist
+    if isinstance(channel.parent, discord.TextChannel):
+        if f"{channel.parent.name}@{channel.name}" in whitelist:
+            return True
+        if match_parent:
+            return _channel_matches(channel.parent, whitelist, connect_id, match_parent)
+    return False
 
 
 # The main ArchipelaDOS Discord bot class. Handles processing of user commands, sending
@@ -70,18 +91,27 @@ class ADOSBot(commands.Bot):
             _log.error("Could not find Discord server '%s'; bot will not operate", self._config.discord_server)
             return
 
-        # Validate that the configured channels and roles exist in the guild.
-        config_roles = set(itertools.chain(*self._config.discord_command_role_restrictions.values()))
-        config_channels = set(itertools.chain(*self._config.discord_command_channel_restrictions.values()))
+        # Validate that the configured roles and channels exist in the guild.
+        config_roles = set(itertools.chain(*self._config.discord_command_role_whitelist.values()))
+        config_channels = set(itertools.chain(*self._config.discord_command_channel_whitelist.values()))
         config_channels.update(self._config.discord_command_channels)
+        config_channels.discard(None)
 
-        if missing_roles := config_roles - set(role.name for role in self._guild.roles):
+        config_roles.difference_update(role.name for role in self._guild.roles)
+        if config_roles:
+            _log.warning("Could not find configured roles %s in server '%s'", config_roles, self._config.discord_server)
+
+        for channel in guild.text_channels:
+            for thread in channel.threads:
+                config_channels.discard(thread.id)
+                config_channels.discard(f"{channel.name}@{thread.name}")
+            config_channels.discard(channel.id)
+            config_channels.discard(channel.name)
+        if config_channels:
             _log.warning(
-                "Could not find configured roles %s in server '%s'", missing_roles, self._config.discord_server
-            )
-        if missing_channels := config_channels - set(channel.name for channel in self._guild.text_channels):
-            _log.warning(
-                "Could not find configured channels %s in server '%s'", missing_channels, self._config.discord_server
+                "Could not find configured channels/threads %s in server '%s'",
+                config_channels,
+                self._config.discord_server,
             )
 
         # Guild emojis are only populated after the bot has connected, so custom emojis for death poll
@@ -121,12 +151,9 @@ class ADOSBot(commands.Bot):
             return
 
         if not isinstance(message.channel, discord.DMChannel):
-            channel_name = message.channel.name
-            if isinstance(message.channel, discord.Thread):
-                parent_channel = self._guild.get_channel(message.channel.parent_id)
-                if parent_channel is not None:
-                    channel_name = parent_channel.name
-            if channel_name not in self._config.discord_command_channels:
+            if not _channel_matches(
+                message.channel, self._config.discord_command_channels, self._room_manager.active_room_connect_id, True
+            ):
                 return
 
         await super().on_message(message)  # type: ignore[no-untyped-call]
@@ -138,7 +165,7 @@ class ADOSBot(commands.Bot):
         _log.info("Processing user command '%s'", ctx.message.content)
 
         member = ctx.author if isinstance(ctx.author, discord.Member) else self._guild.get_member(ctx.author.id)
-        for command, roles in self._config.discord_command_role_restrictions.items():
+        for command, roles in self._config.discord_command_role_whitelist.items():
             command = f"{self._config.discord_command_prefix}{command}"
             if ctx.message.content.startswith(command):
                 if member is None or not roles.intersection(role.name for role in member.roles):
@@ -146,10 +173,10 @@ class ADOSBot(commands.Bot):
                     await send_failure(ctx, f"You do not have permission to run `{command}`")
                     return
 
-        for command, channels in self._config.discord_command_channel_restrictions.items():
+        for command, channels in self._config.discord_command_channel_whitelist.items():
             command = f"{self._config.discord_command_prefix}{command}"
             if ctx.message.content.startswith(command):
-                if not isinstance(ctx.channel, discord.TextChannel) or ctx.channel.name not in channels:
+                if not _channel_matches(ctx.channel, channels, self._room_manager.active_room_connect_id, False):
                     _log.info("User attempted use of command '%s' in unsupported channel", command)
                     await send_failure(ctx, f"Command `{command}` cannot be used in the current channel")
                     return

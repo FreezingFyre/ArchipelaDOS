@@ -202,7 +202,7 @@ class RoomState(Persisted[RoomStateData]):
 
         self._item_log.slot_items[message.to_slot_id].append(sent_item)
         self._record_item_category(sent_item)
-        with open(self._item_log_file, "a") as log_file:
+        with open(self._item_log_file, mode="a", encoding="utf-8") as log_file:
             log_file.write(f"{json.dumps(sent_item._asdict())}\n")  # pylint: disable = protected-access
 
         if message.from_slot_id in self._state.slots_finished or message.to_slot_id in self._state.slots_finished:
@@ -280,7 +280,7 @@ class RoomState(Persisted[RoomStateData]):
             return data
 
         _log.info("Loading item log from '%s'", self._item_log_file)
-        with open(self._item_log_file, "r") as log_file:
+        with open(self._item_log_file, mode="r", encoding="utf-8") as log_file:
             for line in log_file:
                 if line.startswith(REPLAY_MARKER):
                     # This line indicates a replay occurred for the given user and slot ID.
@@ -409,7 +409,7 @@ class RoomState(Persisted[RoomStateData]):
         recent_items = self._item_log.slot_items[slot.id][replay_index:]
         self._item_log.user_slot_replay_index[user_slot] = len(self._item_log.slot_items[slot.id])
 
-        with open(self._item_log_file, "a") as log_file:
+        with open(self._item_log_file, mode="a", encoding="utf-8") as log_file:
             log_file.write(f"{REPLAY_MARKER}{json.dumps(user_slot._asdict())}\n")  # pylint: disable = protected-access
         return recent_items
 

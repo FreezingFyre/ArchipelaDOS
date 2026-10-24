@@ -12,12 +12,20 @@ discord_server: null
 # The character to use as the prefix for Discord commands. The character must be non-alphanumeric.
 discord_command_prefix: "!"
 
-# The Discord channel(s) in which to service user commands. These must be given as channel names.
+# The Discord channel(s)/thread(s) in which to service user commands. This must be a list of any
+# combination of:
+#
+#   - Channel names, like "my-channel"
+#   - Channel and thread names separated by the @ symbol, like "my-channel@Specific Thread"
+#   - Channel or thread IDs, like 1557563443579979118
+#   - CONNECT_CHANNEL, to denote the channel/thread that the "room connect" command was called in
+#
+# Note that specifying a channel here allows commands to be run in any thread of that channel.
 discord_command_channels: []
 
-# The Discord channel(s) in which to broadcast. These must be given as a mapping from channel
-# names to a list of which message types to broadcast in the channel. If the list is empty, all
-# messages will be broadcast to that channel. These are the message types:
+# The Discord channel(s)/thread(s) in which to broadcast. This must be given as a mapping from
+# channels (specified the same as in "discord_command_channels") to a list of which message types
+# to broadcast in each channel. These are the message types:
 #
 #   - "progression_items": Broadcast progression item sends.
 #   - "useful_items": Broadcast useful item sends (includes progression).
@@ -31,42 +39,46 @@ discord_command_channels: []
 #   - "slot_released": Broadcast when a player's remaining items are manually released.
 #   - "room_completed": Broadcast when all players have reached their goal or been manually released.
 #   - "admin_alerts": Broadcast alerts related to bot status, like when it disconnects.
+#   - "everything": Broadcast all messages.
 #
-# Note that at least one channel *must* be configured to broadcast "admin_alerts". Here is an
-# example for this configuration, so that messages are sent to the channels "all-messages" and
-# "specific-messages":
+# Note that at least one channel/thread *must* be configured to broadcast admin alerts. Here is an
+# example of this configuration:
 #
 # discord_broadcast_channels: {
-#     "all-messages": [],
-#     "specific-messages": ["progression_items", "death_links", "goal_reached"]
+#     "all-messages": ["everything"],
+#     "specific-messages@Specifics": ["trap_items"],
+#     "CONNECT_CHANNEL": ["progression_items", "death_links", "goal_reached"]
 # }
 discord_broadcast_channels: {}
 
-# The Discord channel(s) in which *not* to mention users for subscribed item sends. These must be
-# given as channel names. Useful if item send notifications are being broadcast to multiple channels.
+# The Discord channel(s)/thread(s) in which *not* to mention users for subscribed item sends. Useful
+# if item send notifications are being broadcast to multiple channels. These must be a subset of the
+# channel(s)/thread(s) configured in "discord_broadcast_channels".
 discord_mention_channel_blacklist: []
 
-# Restrictions on which Discord role(s) certain commands can be used by. These must be given as a
-# mapping from command names to a list of which roles the command can be used by. Here is an example
-# for this configuration that limits "room connect" and "room finalize" commands to use by users
-# with the "Mod" role:
+# Restrictions on which Discord role(s) certain commands can be used by. This must be given as a
+# mapping from command names to a list of role names. Here is an example of this configuration that
+# limits "room connect" and "room finalize" commands to use by users with the "Mod" role:
 #
-# discord_command_role_restrictions: {
+# discord_command_role_whitelist: {
 #     "room connect": ["Mod"],
 #     "room finalize": ["Mod"]
 # }
-discord_command_role_restrictions: {}
+discord_command_role_whitelist: {}
 
-# Restrictions on which Discord channel(s) certain commands can be used in. These must be given as
-# a mapping from command names to a list of which channels the command can be used in. These channels
-# must be a subset of the general command channels. Here is an example for this configuration that
-# limits "deathlink" and "deathpoll" commands to use in the "primary" Discord channel:
+# Restrictions on which Discord channel(s)/thread(s) certain commands can be used in. This must be
+# given as a mapping from command names to a list channels, each of which must be a subset of the
+# channel(s)/thread(s) configured in "discord_command_channels". Here is an example of this
+# configuration that limits "deathlink" and "deathpoll" commands to use in the "primary" channel:
 #
-# discord_command_channel_restrictions: {
+# discord_command_channel_whitelist: {
 #     "deathlink": ["primary"],
 #     "deathpoll": ["primary"]
 # }
-discord_command_channel_restrictions: {}
+#
+# Note that specifying a channel here does not allow restricted commands to be run in all thread of
+# that channel.
+discord_command_channel_whitelist: {}
 
 
 ###################

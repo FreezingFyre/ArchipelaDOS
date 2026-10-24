@@ -6,12 +6,14 @@ The bot can broadcast messages from the Archipelago multiworld into one or more 
 
 ## Configuration
 
-Broadcast channels are configured via the `discord_broadcast_channels` field in `config.yaml`. Each entry maps a Discord channel name to a list of broadcast categories. If the list is empty, *all* message types will be broadcast to that channel. As an example:
+Broadcast channels are configured via the `discord_broadcast_channels` field in `config.yaml`. Each entry maps a Discord channel or thread to a list of broadcast categories. Channels in this mapping can be specified by name or ID. Threads can be specified by the channel/thread names separated by `@`, or by ID as well. Additionally, broadcasts can be configured to whatever channel `!room connect` was called from by using `CONNECT_CHANNEL` in place of a channel name. As an example:
 
 ```yaml
-discord_broadcast_channels:
-    archipelago-full: []
-    archipelago-important: ["progression_items", "death_links", "goal_reached"]
+discord_broadcast_channels: {
+    archipelago-full: ["everything"],
+    archipelago-important: ["progression_items", "death_links", "goal_reached"],
+    CONNECT_CHANNEL: ["trap_items"]
+}
 ```
 
 ## Broadcast categories
@@ -32,6 +34,7 @@ The following categories can be used to control what is broadcast to each channe
 | `slot_released`     | Notifications when a player's remaining items are manually released |
 | `room_completed`    | Notification when all players have reached their goal or been manually released |
 | `admin_alerts`      | Alerts related to bot status, like when it disconnects unexpectedly |
+| `everything`        | All messages |
 
 Only one of `progression_items`, `useful_items`, or `all_items` may be specified per channel. These are hierarchical filters; `useful_items` includes progression items, and `all_items` includes both.
 

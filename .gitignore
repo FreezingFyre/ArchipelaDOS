@@ -1,7 +1,6 @@
 # ArchipelaDOS files
+data*/
 devenv/
-data/
-logs/
 output/
 
 # Byte-compiled / optimized / DLL files
