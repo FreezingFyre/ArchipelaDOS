@@ -31,7 +31,9 @@ discord.VoiceClient.warn_nacl = False
 
 # Determines whether a given Discord channel/thread matches one given in a configured
 # whitelist set.
-def _channel_matches(channel: Any, whitelist: set[ChannelIdentifier], connect_id: Optional[int]) -> bool:
+def _channel_matches(
+    channel: Any, whitelist: set[ChannelIdentifier], connect_id: Optional[int], match_parent: bool
+) -> bool:
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         return False
     if channel.id == connect_id and None in whitelist:
@@ -43,7 +45,8 @@ def _channel_matches(channel: Any, whitelist: set[ChannelIdentifier], connect_id
     if isinstance(channel.parent, discord.TextChannel):
         if f"{channel.parent.name}@{channel.name}" in whitelist:
             return True
-        return _channel_matches(channel.parent, whitelist, connect_id)
+        if match_parent:
+            return _channel_matches(channel.parent, whitelist, connect_id, match_parent)
     return False
 
 
@@ -149,7 +152,7 @@ class ADOSBot(commands.Bot):
 
         if not isinstance(message.channel, discord.DMChannel):
             if not _channel_matches(
-                message.channel, self._config.discord_command_channels, self._room_manager.active_room_connect_id
+                message.channel, self._config.discord_command_channels, self._room_manager.active_room_connect_id, True
             ):
                 return
 
@@ -173,7 +176,7 @@ class ADOSBot(commands.Bot):
         for command, channels in self._config.discord_command_channel_whitelist.items():
             command = f"{self._config.discord_command_prefix}{command}"
             if ctx.message.content.startswith(command):
-                if not _channel_matches(ctx.channel, channels, self._room_manager.active_room_connect_id):
+                if not _channel_matches(ctx.channel, channels, self._room_manager.active_room_connect_id, False):
                     _log.info("User attempted use of command '%s' in unsupported channel", command)
                     await send_failure(ctx, f"Command `{command}` cannot be used in the current channel")
                     return

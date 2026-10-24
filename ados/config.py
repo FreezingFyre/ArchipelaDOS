@@ -1,4 +1,3 @@
-import itertools
 import os
 from datetime import timedelta
 from enum import Enum

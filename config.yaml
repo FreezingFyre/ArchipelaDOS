@@ -20,6 +20,7 @@ discord_command_prefix: "!"
 #   - Channel or thread IDs, like 1557563443579979118
 #   - CONNECT_CHANNEL, to denote the channel/thread that the "room connect" command was called in
 #
+# Note that specifying a channel here allows commands to be run in any thread of that channel.
 discord_command_channels: []
 
 # The Discord channel(s)/thread(s) in which to broadcast. This must be given as a mapping from
@@ -74,6 +75,9 @@ discord_command_role_whitelist: {}
 #     "deathlink": ["primary"],
 #     "deathpoll": ["primary"]
 # }
+#
+# Note that specifying a channel here does not allow restricted commands to be run in all thread of
+# that channel.
 discord_command_channel_whitelist: {}
 
 
