@@ -67,9 +67,8 @@ discord_mention_channel_blacklist: []
 discord_command_role_whitelist: {}
 
 # Restrictions on which Discord channel(s)/thread(s) certain commands can be used in. This must be
-# given as a mapping from command names to a list channels, each of which must be a subset of the
-# channel(s)/thread(s) configured in "discord_command_channels". Here is an example of this
-# configuration that limits "deathlink" and "deathpoll" commands to use in the "primary" channel:
+# given as a mapping from command names to a list channels. Here is an example of this configuration
+# that limits "deathlink" and "deathpoll" commands to use in the "primary" channel:
 #
 # discord_command_channel_whitelist: {
 #     "deathlink": ["primary"],
