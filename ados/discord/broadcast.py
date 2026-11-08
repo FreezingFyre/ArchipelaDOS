@@ -42,6 +42,7 @@ class BroadcastConfig:
         everything = BroadcastCategory.EVERYTHING in categories
 
         self.item_filter = ItemCategoryFilter.ALL if everything else ItemCategoryFilter.NONE
+        self.send_subscribed_items = everything
         self.send_traps = everything
         self.send_death_links = everything
         self.send_join_leave = everything
@@ -61,6 +62,8 @@ class BroadcastConfig:
                 self.item_filter = ItemCategoryFilter.ALL
             elif category == BroadcastCategory.TRAP_ITEMS:
                 self.send_traps = True
+            elif category == BroadcastCategory.SUBSCRIBED_ITEMS:
+                self.send_subscribed_items = True
             elif category == BroadcastCategory.DEATH_LINKS:
                 self.send_death_links = True
             elif category == BroadcastCategory.JOIN_LEAVE:
@@ -91,7 +94,6 @@ class MessageBroadcaster:
 
         self._channels: dict[int, discord.TextChannel | discord.Thread] = {}
         self._channel_configs: dict[int, BroadcastConfig] = {}
-        self._no_mention_channels: set[int] = set()
 
         self._death_link_messages = self._load_death_link_messages(config.death_link_messages_path)
 
@@ -114,14 +116,11 @@ class MessageBroadcaster:
         channel_categories = {
             identifier: categories.copy() for identifier, categories in self._config.discord_broadcast_channels.items()
         }
-        mention_blacklist = self._config.discord_mention_channel_blacklist.copy()
         if connect_id is not None:
             if None in channel_categories:
                 if connect_id not in channel_categories:
                     channel_categories[connect_id] = set()
                 channel_categories[connect_id].update(channel_categories.pop(None))
-            if None in mention_blacklist:
-                mention_blacklist.add(connect_id)
 
         def _consider_channel(channel: discord.TextChannel | discord.Thread) -> None:
             if isinstance(channel, discord.Thread):
@@ -134,8 +133,6 @@ class MessageBroadcaster:
             if categories:
                 self._channels[channel.id] = channel
                 self._channel_configs[channel.id] = BroadcastConfig(categories)
-            if mention_blacklist.intersection({channel.id, channel_name}):
-                self._no_mention_channels.add(channel.id)
 
         for channel in guild.text_channels:
             _consider_channel(channel)
@@ -160,7 +157,6 @@ class MessageBroadcaster:
             self._broadcast_task = None
         self._channels.clear()
         self._channel_configs.clear()
-        self._no_mention_channels.clear()
 
     def admin_alert(self, message: str) -> None:
         channel_ids = self._filter_channels(lambda config: config.send_admin_alerts)
@@ -223,10 +219,9 @@ class MessageBroadcaster:
 
                 for channel_id in item.channel_ids:
                     channel = self._channels.get(channel_id)
-                    channel_mentions = mentions if channel_id not in self._no_mention_channels else ""
                     if not channel:
                         continue
-                    await channel.send(content.format(mentions=channel_mentions))
+                    await channel.send(content.format(mentions=mentions))
 
             except Exception as ex:
                 _log.error(
@@ -239,19 +234,23 @@ class MessageBroadcaster:
     # multiworld. These are subject to a variety of filters based on channel configuration,
     # and may notify users who have subscribed to certain items.
     def _handle_item_send(self, message: ItemSendMessage) -> None:
-        channel_ids: list[int] = []
-        for channel_id, config in self._channel_configs.items():
-            if message.category == ItemCategory.TRAP and config.send_traps:
-                channel_ids.append(channel_id)
-            elif config.item_filter.check(message.category):
-                channel_ids.append(channel_id)
-        if not channel_ids:
-            return
-
         to_slot = self._state.resolve_slot(message.to_slot_id)
         from_slot = self._state.resolve_slot(message.from_slot_id)
         item = self._state.resolve_item(to_slot.game, message.item_id)
         location = self._state.resolve_location(from_slot.game, message.location_id)
+        mention_user_ids = self._state.get_subscribed_users(to_slot, message.category, item)
+
+        mention_channel_ids: list[int] = []
+        no_mention_channel_ids: list[int] = []
+        for channel_id, config in self._channel_configs.items():
+            if mention_user_ids and config.send_subscribed_items:
+                mention_channel_ids.append(channel_id)
+            elif message.category == ItemCategory.TRAP and config.send_traps:
+                no_mention_channel_ids.append(channel_id)
+            elif config.item_filter.check(message.category):
+                no_mention_channel_ids.append(channel_id)
+        if not mention_channel_ids and not no_mention_channel_ids:
+            return
 
         self_send = message.to_slot_id == message.from_slot_id
         if message.category == ItemCategory.TRAP:
@@ -268,8 +267,10 @@ class MessageBroadcaster:
         content += f"{{mentions}}\n-# via check {location}"
 
         _log.info("Handling item '%s' sent from '%s' to '%s'", item, from_slot, to_slot)
-        mention_user_ids = self._state.get_subscribed_users(to_slot, message.category, item)
-        self._broadcast_queue.put_nowait(BroadcastItem(channel_ids, content, mention_user_ids))
+        if mention_channel_ids:
+            self._broadcast_queue.put_nowait(BroadcastItem(mention_channel_ids, content, mention_user_ids))
+        if no_mention_channel_ids:
+            self._broadcast_queue.put_nowait(BroadcastItem(no_mention_channel_ids, content))
 
     def _handle_death_link(self, message: DeathLinkMessage) -> None:
         if not (channel_ids := self._filter_channels(lambda config: config.send_death_links)):

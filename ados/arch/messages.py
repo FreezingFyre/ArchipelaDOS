@@ -389,7 +389,7 @@ def deserialize(raw_message: Data) -> Iterator[ServerMessage]:
                 yield ServerChatMessage(message)
             elif cmd == "PrintJSON" and message.get("type") == "Goal":
                 yield GoalReachedMessage(message)
-            elif cmd == "PrintJSON" and message.get("type") in {"Collect", "Release"}:
+            elif cmd == "PrintJSON" and message.get("type") == "Release":
                 yield SlotReleaseMessage(message)
             elif (
                 cmd == "PrintJSON"
