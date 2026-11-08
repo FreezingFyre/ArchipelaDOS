@@ -247,7 +247,7 @@ class GraphPlotter:
                     column_label.set_fontweight("bold")
 
         if legend is not None:
-            half_boundary = 0.5 * (max_value or max(total_values))
+            half_boundary = 0.5 * (max_value or max(bar_shadows or total_values))
             location = "upper right" if total_values[-1] < half_boundary else "lower right"
             plt.legend(legend, reverse=True, fontsize="small", loc=location)
 

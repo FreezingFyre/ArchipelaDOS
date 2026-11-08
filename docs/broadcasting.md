@@ -26,6 +26,7 @@ The following categories can be used to control what is broadcast to each channe
 | `useful_items`      | Item sends classified as useful (includes progression) |
 | `all_items`         | All item sends (includes useful and progression, excludes traps) |
 | `trap_items`        | Trap item sends |
+| `subscribed_items`  | Items for which users have subscribed |
 | `death_links`       | Death link messages |
 | `join_leave`        | Player join and leave messages |
 | `player_chat`       | Messages sent by players in the Archipelago chat |
@@ -42,7 +43,7 @@ Only one of `progression_items`, `useful_items`, or `all_items` may be specified
 
 ### Item sends
 
-When an item is sent from one slot to another, the bot broadcasts a message indicating the sender, receiver, item name, and location. Users who have subscribed to the item (via `!subscribe`) will be @mentioned in the message. Regardless of whether item sends are broadcast, the full history of item sends is available for users to query with the `!replay` command.
+When an item is sent from one slot to another, the bot broadcasts a message indicating the sender, receiver, item name, and location. Users who have subscribed to the item (via `!subscribe`) will be @mentioned in the message if the channel is configured with `subscribed_items`. Regardless of whether item sends are broadcast, the full history of item sends is available for users to query with the `!replay` command.
 
 ### Death links
 

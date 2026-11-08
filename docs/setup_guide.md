@@ -87,7 +87,7 @@ The following configurations are *essential* to set:
         ```yaml
         discord_broadcast_channels: {
             "channel-1": ["death_links"],
-            "channel-2": ["all_items", "join_leave"]
+            "channel-2": ["all_items", "join_leave", "admin_alerts"]
         }
         ```
     - Note that `progression_items`, `useful_items`, and `all_items` are different filter levels for item send messages, and are mutually exclusive. Traps will only be broadcast if `trap_items` are configured.

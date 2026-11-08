@@ -45,6 +45,7 @@ class BroadcastCategory(str, Enum):
     USEFUL_ITEMS = "useful_items"
     ALL_ITEMS = "all_items"
     TRAP_ITEMS = "trap_items"
+    SUBSCRIBED_ITEMS = "subscribed_items"
     DEATH_LINKS = "death_links"
     JOIN_LEAVE = "join_leave"
     PLAYER_CHAT = "player_chat"
@@ -71,7 +72,6 @@ class ADOSConfig(BaseModel):
     discord_command_prefix: str
     discord_command_channels: set[ChannelIdentifierType]
     discord_broadcast_channels: dict[ChannelIdentifierType, set[BroadcastCategory]]
-    discord_mention_channel_blacklist: set[ChannelIdentifierType]
     discord_command_role_whitelist: dict[str, set[str]]
     discord_command_channel_whitelist: dict[str, set[ChannelIdentifierType]]
 
@@ -130,11 +130,19 @@ class ADOSConfig(BaseModel):
                 raise ValueError(
                     f"broadcast channel config cannot contain multiple of {[category.value for category in item_categories]}"
                 )
+
         for categories in self.discord_broadcast_channels.values():
             if categories.intersection({BroadcastCategory.ADMIN_ALERTS, BroadcastCategory.EVERYTHING}):
                 break
         else:
             raise ValueError("at least one broadcast channel must be configured to receive 'admin_alerts'")
+
+        for categories in self.discord_broadcast_channels.values():
+            if categories.intersection({BroadcastCategory.SUBSCRIBED_ITEMS, BroadcastCategory.EVERYTHING}):
+                break
+        else:
+            raise ValueError("at least one broadcast channel must be configured to receive 'subscribed_items'")
+
         return self
 
     # Validate that the default death poll timeout is between the minimum and maximum, if set.
@@ -145,13 +153,6 @@ class ADOSConfig(BaseModel):
                 raise ValueError("default deathpoll timeout must be greater than the minimum")
             if self.deathpoll_timeout_default > (self.deathpoll_timeout_maximum or timedelta.max):
                 raise ValueError("default deathpoll timeout must be less than the maximum")
-        return self
-
-    # Validate that channels in the mention blacklists are a subset of the broadcast channels, if set.
-    @model_validator(mode="after")
-    def _validate_channel_lists(self) -> Self:
-        if self.discord_mention_channel_blacklist.difference(self.discord_broadcast_channels.keys()):
-            raise ValueError("channels in mention blacklist must be a subset of all broadcast channels")
         return self
 
 
